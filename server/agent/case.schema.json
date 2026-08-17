@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HardCaseRecord",
+  "description": "疑难案例记录: 智能体在算法覆盖不到时的临场发挥, 经人工确认后成为演化层(dataset.py)的新标注数据。JSONL 每行一条。",
+  "type": "object",
+  "required": ["id", "ts", "query", "query_type", "inputs", "plan", "attempts", "outcome"],
+  "properties": {
+    "id": {"type": "string", "description": "唯一 id, 建议 case_YYYYMMDD_NNN"},
+    "ts": {"type": "string", "description": "ISO 时间戳"},
+    "query": {"type": "string"},
+    "query_type": {
+      "type": "string",
+      "enum": ["composite", "insufficient", "environment", "reference_quality", "combo_retrieval", "novel_charset", "routine"],
+      "description": "疑难类型: composite=复合查询; insufficient=结果不足; environment=环境异常; reference_quality=参考图质量; combo_retrieval=组合检索; novel_charset=混淆表未覆盖字符集; routine=常规(仅记录)"
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "video": {"type": ["string", "null"]},
+        "ref": {"type": ["string", "null"]},
+        "provider_status": {"type": "object"}
+      }
+    },
+    "plan": {"type": "array", "items": {"type": "string"}, "description": "智能体制定的步骤计划(拆解后的)"},
+    "attempts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool", "params", "note"],
+        "properties": {
+          "tool": {"type": "string"},
+          "params": {"type": "object"},
+          "note": {"type": "string", "description": "为什么这么做 + 观察到的关键点"},
+          "envelope": {"type": "object", "description": "toolbox.dispatch 的返回信封(status/summary/outputs)"}
+        }
+      }
+    },
+    "outcome": {"type": "string", "enum": ["resolved", "unresolved", "user_input", "escalated"]},
+    "agent_reasoning": {"type": "string", "description": "智能体对处置过程的总结"},
+    "human_confirmed": {"type": ["boolean", "null"], "description": "人工确认后才可进入数据集"},
+    "gt": {
+      "type": ["object", "null"],
+      "description": "人工确认后填写: hit_intervals=[[start_s,end_s]...] 或/与 positive_reads=[...]",
+      "properties": {
+        "hit_intervals": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
+        "positive_reads": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+__pycache__/
+.DS_Store
+*.log
+*.pyc
+config/
+data/
+dist/
+node_modules/
+server.log
+server/bench_out/
+server/jobs/
+server/outputs/
+server/uploads/
+server/work/
+weights/
+yolov8s-worldv2.pt

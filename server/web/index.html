@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>监控视频检索智能体 · 云边协同</title>
+<style>
+  :root {
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1e2740; --line:#2a3550;
+    --fg:#e8ecf6; --dim:#93a0bd; --acc:#4da3ff; --ok:#37d67a;
+    --warn:#ffb84d; --bad:#ff5d5d; --mono:"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);display:flex;flex-direction:column;
+       font:13.5px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:8px 16px;background:var(--panel);
+         border-bottom:1px solid var(--line);flex:0 0 auto}
+  header h1{font-size:14.5px;margin:0;font-weight:600}
+  header .sub{color:var(--dim);font-size:11.5px}
+  nav{margin-left:auto;display:flex;gap:4px}
+  nav button{background:none;border:1px solid transparent;color:var(--dim);padding:5px 12px;
+             cursor:pointer;font-size:12.5px;border-radius:7px}
+  nav button.on{color:var(--fg);background:var(--panel2);border-color:var(--line)}
+
+  main{flex:1;min-height:0;display:none}
+  main.on{display:flex}
+
+  /* ===== 三栏工作台 ===== */
+  #tab-search{gap:0;padding:12px}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+       display:flex;flex-direction:column;min-height:0}
+  #col-video{flex:0 0 305px}
+  #col-chat{flex:1 1 auto;min-width:340px}
+  #col-result{flex:0 0 375px}
+  .splitter{flex:0 0 9px;cursor:col-resize;position:relative;border-radius:4px}
+  .splitter::after{content:"";position:absolute;left:3px;top:50%;
+    transform:translateY(-50%);width:3px;height:44px;background:var(--line);
+    border-radius:3px;transition:background .12s}
+  .splitter:hover::after,.splitter.on::after{background:var(--acc)}
+  body.dragging{cursor:col-resize;user-select:none}
+  body.dragging video{pointer-events:none}
+  .col-h{padding:9px 14px;border-bottom:1px solid var(--line);font-size:12.5px;
+         color:var(--acc);font-weight:600;flex:0 0 auto;display:flex;gap:8px;align-items:center}
+  .col-h small{color:var(--dim);font-weight:400}
+
+  /* 左栏:视频 */
+  .drop{margin:10px;border:1px dashed var(--line);border-radius:9px;padding:14px;
+        text-align:center;color:var(--dim);cursor:pointer;font-size:12px}
+  .drop.over{border-color:var(--acc);color:var(--acc)}
+  #video-player{width:calc(100% - 20px);margin:0 10px;border-radius:8px;background:#000;
+                max-height:180px}
+  .vinfo{padding:8px 14px 4px;font-size:11.5px;color:var(--dim);
+         display:grid;grid-template-columns:1fr 1fr;row-gap:2px;font-family:var(--mono)}
+  .vinfo b{color:var(--fg);font-weight:500}
+  .vpath{margin:6px 10px;display:flex;gap:6px}
+  .vpath input{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+               border-radius:6px;padding:5px 8px;font-size:11.5px;font-family:var(--mono)}
+  .modes{margin:8px 12px;display:flex;gap:12px;font-size:12px;color:var(--dim)}
+  .modes label{display:flex;gap:5px;align-items:center;cursor:pointer}
+
+  /* 中栏:对话 */
+  #chat-log{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:86%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;word-break:break-word}
+  .msg.user{align-self:flex-end;background:#2b4a7a;color:#eaf2ff;border-bottom-right-radius:4px}
+  .msg.agent{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);
+             border-bottom-left-radius:4px}
+  .msg.agent.note{color:var(--dim);font-size:12px;background:none;border:none;padding:2px 6px}
+  .msg .thumbchip{max-width:120px;max-height:90px;border-radius:6px;display:block;margin-top:6px;border:1px solid var(--line)}
+  .msg table.mdtable{border-collapse:collapse;margin:6px 0;font-size:12px;width:100%}
+  .msg table.mdtable th,.msg table.mdtable td{border:1px solid var(--line);padding:4px 8px;
+    text-align:left;color:var(--fg)}
+  .msg table.mdtable th{background:var(--panel);color:var(--acc);font-weight:600}
+  .msg h1,.msg h2,.msg h3{margin:8px 0 4px;font-size:13.5px}
+  .msg p{margin:4px 0}
+  .msg ul,.msg ol{margin:4px 0;padding-left:18px}
+  .runbox{align-self:stretch;background:var(--panel2);border:1px solid var(--line);
+          border-radius:12px;padding:8px 12px;font-family:var(--mono);font-size:11.5px}
+  .runbox .t{color:var(--acc);margin-bottom:4px;font-weight:600}
+  .runbox .ln{color:var(--dim);padding:1px 0}
+  .runbox .ln.ok{color:var(--ok)} .runbox .ln.bad{color:var(--bad)} .runbox .ln.info{color:var(--acc)}
+  .finalcard{align-self:stretch;border-radius:12px;padding:10px 14px;border:1px solid var(--line)}
+  .finalcard.hit{background:rgba(55,214,122,.08);border-color:rgba(55,214,122,.4)}
+  .finalcard.miss{background:rgba(255,184,77,.06);border-color:rgba(255,184,77,.35)}
+  .verdict{font-weight:700;font-size:13px}
+  .verdict.hit{color:var(--ok)} .verdict.no_hit,.verdict.inconclusive{color:var(--warn)}
+  .finalcard .meta{color:var(--dim);font-size:11.5px;margin-top:6px}
+  .finalcard .ops{margin-top:8px;display:flex;gap:8px}
+  .composer{flex:0 0 auto;border-top:1px solid var(--line);padding:10px 12px;display:flex;
+            gap:8px;align-items:flex-end}
+  .composer textarea{flex:1;background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+      border-radius:9px;padding:8px 10px;font-size:13px;font-family:inherit;resize:none;
+      min-height:44px;max-height:120px}
+  .cbtn{border:0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12.5px;font-weight:600;white-space:nowrap}
+  .cbtn.search{background:var(--acc);color:#06101f}
+  .cbtn.chat{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+  .cbtn:disabled{opacity:.45;cursor:wait}
+  .cbtn.icon{padding:9px 11px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);font-size:15px}
+  .refchip{margin:0 12px 4px;display:none;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+  .refchip img{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+  .refchip.on{display:flex}
+
+  /* 右栏:结果 */
+  #result-player{width:100%;background:#000;border-radius:0;border:0;min-height:130px}
+  #result-list{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+  .seg{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .seg.cur{border-color:var(--acc)}
+  .seg img{width:100%;border-radius:7px;margin-bottom:7px}
+  .seg .row{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+  .seg .tt{font-family:var(--mono);color:var(--fg);font-weight:600}
+  .seg .st{color:var(--dim);font-size:11px;font-family:var(--mono);margin-top:3px}
+  .seg button{background:var(--acc);color:#06101f;border:0;border-radius:6px;padding:4px 12px;
+              cursor:pointer;font-size:11.5px;font-weight:600}
+  .seg .ev{color:var(--dim);font-size:10.5px;margin-top:5px;font-family:var(--mono);
+           white-space:pre-wrap;word-break:break-all}
+  .empty{color:var(--dim);text-align:center;padding:40px 10px;font-size:12px}
+
+  /* 案例库 / 配置页 */
+  #tab-cases,#tab-config{display:none;flex-direction:column;gap:12px;padding:14px;overflow-y:auto}
+  #tab-cases.on,#tab-config.on{display:flex}
+  .wide{max-width:1100px;margin:0 auto;width:100%;background:var(--panel);
+        border:1px solid var(--line);border-radius:12px;padding:16px}
+  .wide h2{margin:0 0 10px;font-size:13.5px;color:var(--acc)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:500;font-size:11.5px}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;
+      overflow-x:auto;font-family:var(--mono);font-size:11.5px}
+  .badge{padding:1px 8px;border-radius:10px;font-size:10.5px}
+  .badge.conf{background:rgba(55,214,122,.2);color:var(--ok)}
+  .badge.pend{background:rgba(255,184,77,.2);color:var(--warn)}
+  button.mini{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+              border-radius:6px;padding:3px 10px;cursor:pointer;font-size:11.5px}
+  .setgrid{display:grid;grid-template-columns:170px 1fr;gap:8px 12px;align-items:center;
+           font-size:12.5px;margin-top:6px}
+  .setgrid label{color:var(--dim)}
+  .setgrid input{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+                 border-radius:6px;padding:6px 9px;font-size:12px;font-family:var(--mono)}
+  .kv{display:grid;grid-template-columns:120px 1fr;row-gap:4px;font-size:12.5px}
+  .kv b{color:var(--dim);font-weight:500}
+
+  /* 模态 */
+  .modal-bg{position:fixed;inset:0;background:rgba(5,8,15,.72);display:none;
+            align-items:center;justify-content:center;z-index:20}
+  .modal-bg.on{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:18px;width:min(430px,92vw)}
+  .modal h3{margin:0 0 6px;font-size:13.5px;color:var(--acc)}
+  .iv-row{display:grid;grid-template-columns:1fr 16px 1fr 28px;gap:8px;align-items:center;margin:6px 0}
+  .iv-row input{width:100%;background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+                border-radius:6px;padding:5px 8px;font-family:var(--mono);font-size:12.5px}
+  .iv-row .del{cursor:pointer;color:var(--bad);border:0;background:none;font-size:14px}
+  .toast{position:fixed;bottom:18px;right:18px;background:var(--panel2);border:1px solid var(--acc);
+         border-radius:8px;padding:9px 15px;font-size:12.5px;display:none;z-index:30}
+  details summary{cursor:pointer;color:var(--acc);font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>监控视频检索智能体</h1><span class="sub">云边协同 · 视频不出本机</span>
+  <nav>
+    <button data-tab="search" class="on">检索工作台</button>
+    <button data-tab="cases">案例库</button>
+    <button data-tab="config">配置与演化</button>
+  </nav>
+</header>
+
+<!-- ================= 检索工作台(三栏) ================= -->
+<main id="tab-search" class="on">
+
+  <!-- 左:视频输入 -->
+  <div class="col" id="col-video">
+    <div class="col-h">① 视频 <small>本地解码 · 不出本机</small></div>
+    <div class="drop" id="video-drop">点击选择 / 拖入视频<br><span style="font-size:11px">mp4·mov·mkv·avi…</span></div>
+    <input type="file" id="video-file" accept="video/*" style="display:none">
+    <video id="video-player" controls preload="metadata"></video>
+    <div class="vpath"><input id="video-path" placeholder="或填服务器本地路径 /data/x.mp4">
+      <button class="mini" id="btn-loadpath">载入</button></div>
+    <div class="vinfo" id="vinfo"></div>
+    <div class="modes">
+      <label><input type="radio" name="mode" value="auto" checked>智能体(自动)</label>
+      <label><input type="radio" name="mode" value="deterministic">确定性流水线</label>
+    </div>
+    <div style="margin:auto 12px 10px;color:var(--dim);font-size:11px" id="video-note"></div>
+  </div>
+
+  <div class="splitter" id="split-1" title="拖动调整宽度"></div>
+
+  <!-- 中:对话 -->
+  <div class="col" id="col-chat">
+    <div class="col-h">② 对话智能体 <small>检索描述 / 直接对话 / 处理过程流式反馈</small></div>
+    <div id="chat-log">
+      <div class="msg agent note">👋 输入检索描述(如"穿粉色外套的女性")点「检索」;或直接对话。
+        可用 📎 附加参考图(以图搜人)。检索过程与结果会在本窗口流式展示,命中片段在右侧。
+        配置也能用说的:比如「把模型换成 glm-4-flash」或「现在用的什么模型?」。</div>
+    </div>
+    <div class="refchip" id="refchip"><img id="refchip-img"><span id="refchip-name"></span>
+      <button class="mini" id="refchip-del">✕ 移除</button></div>
+    <div class="composer">
+      <button class="cbtn icon" id="btn-attach" title="附加参考图(图片找人)">📎</button>
+      <input type="file" id="ref-file" accept="image/*" style="display:none">
+      <textarea id="chat-input" placeholder="检索描述(可留空仅用参考图),或任意问题直接对话…"></textarea>
+      <button class="cbtn chat" id="btn-chat">💬 对话</button>
+      <button class="cbtn search" id="btn-search">🔍 检索</button>
+    </div>
+  </div>
+
+  <div class="splitter" id="split-2" title="拖动调整宽度"></div>
+
+  <!-- 右:结果 -->
+  <div class="col" id="col-result">
+    <div class="col-h">③ 命中片段 <small>标注帧 · 时间/帧号 · ▶ 播放带框跟踪片段(出现→消失)</small></div>
+    <video id="result-player" controls preload="metadata"></video>
+    <div id="result-list"><div class="empty">暂无结果 — 在中栏发起检索</div></div>
+  </div>
+</main>
+
+<!-- ================= 案例库 ================= -->
+<main id="tab-cases">
+  <div class="wide">
+    <h2>案例库 <small style="color:var(--dim)">待确认 → 人工确认(唯一人工动作) → 演化层养料</small></h2>
+    <div style="color:var(--dim);font-size:12px" id="cases-count"></div>
+    <table><thead><tr><th>case id</th><th>时间</th><th>查询</th><th>类型</th><th>结果</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="cases-body"><tr><td colspan="7">加载中…</td></tr></tbody></table>
+  </div>
+</main>
+
+<!-- ================= 配置与演化 ================= -->
+<main id="tab-config">
+  <div class="wide">
+    <h2>运行时设置 <small style="color:var(--dim)">LLM/VLM key 与 url —— 保存即生效并写入 .env</small></h2>
+    <div class="setgrid">
+      <label>LLM base_url</label><input id="set-baseurl" placeholder="https://api.deepseek.com/v1">
+      <label>LLM 模型</label><input id="set-model" placeholder="deepseek-v4-pro">
+      <label>LLM API key</label><input id="set-key" type="password" placeholder="留空=不修改">
+      <label>当前 key</label><span id="set-key-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
+      <label>ZhipuAI key(VLM)</label><input id="set-zhipu" type="password" placeholder="留空=不修改">
+      <label>当前</label><span id="set-zhipu-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
+      <label>DashScope key(兜底)</label><input id="set-dash" type="password" placeholder="留空=不修改">
+      <label>当前</label><span id="set-dash-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button class="mini" id="btn-save-settings" style="background:var(--acc);color:#06101f;font-weight:600">保存设置</button>
+      <span style="color:var(--dim);font-size:11.5px" id="set-note"></span>
+    </div>
+  </div>
+  <div class="wide">
+    <h2>当前生效配置 <small style="color:var(--dim)">自进化回填结果 fusion/config/</small></h2>
+    <div id="config-body" class="mono" style="font-size:11.5px">加载中…</div>
+    <h2 style="margin-top:14px">冻结 / 演化</h2>
+    <div class="kv"><b>演化冻结(.veto)</b><span id="veto-state">…</span></div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="mini" id="btn-veto">切换 .veto 冻结</button>
+      <button class="mini" id="btn-evolve">手动触发一次演化</button></div>
+    <pre id="evolve-out" style="margin-top:8px">(手动演化输出)</pre>
+  </div>
+  <div class="wide">
+    <h2>演化日志 <small style="color:var(--dim)">evolutions.jsonl</small></h2>
+    <div style="color:var(--dim);font-size:12px" id="evol-count"></div>
+    <pre id="evol-log">(暂无演化记录)</pre>
+  </div>
+</main>
+
+<!-- 确认 GT 模态 -->
+<div class="modal-bg" id="confirm-modal">
+  <div class="modal">
+    <h3>确认命中时间段</h3>
+    <div style="color:var(--dim);font-size:12px">机器给出的时间段已预填——请核对视频后<b>修正为真实起止秒</b>再确认;这份 GT 直接决定演化层质量。</div>
+    <div id="confirm-rows"></div>
+    <button class="mini" id="confirm-add">+ 添加时间段</button>
+    <div style="display:flex;gap:10px;margin-top:12px;justify-content:flex-end">
+      <button class="mini" id="confirm-cancel">取消</button>
+      <button class="cbtn search" id="confirm-ok" style="margin:0">✓ 确认</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { video: null, info: null, ref: null, mode: "auto", chat: [] };
+
+function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";
+  clearTimeout(t._h);t._h=setTimeout(()=>t.style.display="none",3200);}
+async function jfetch(url,opts){const r=await fetch(url,opts);
+  if(!r.ok)throw new Error(`${r.status} ${await r.text()}`);return r.json();}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button, main").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");$("tab-"+b.dataset.tab).classList.add("on");
+  if(b.dataset.tab==="cases")loadCases();
+  if(b.dataset.tab==="config")loadConfig();
+});
+
+/* ---------- 三栏分隔线拖拽 ---------- */
+(function(){
+  const MIN_L=240, MIN_R=280, MIN_C=340, CHROME=70;  // 边距+两条分隔线
+  const saved=(()=>{try{return JSON.parse(localStorage.getItem("vr-cols"))||{}}
+                   catch(e){return{}}})();
+  function apply(wl,wr){
+    const avail=$("tab-search").clientWidth-CHROME;
+    const maxL=avail-MIN_C-MIN_R, maxR=avail-MIN_C-MIN_L;
+    if(wl)$("col-video").style.flexBasis=
+      Math.max(MIN_L,Math.min(maxL,wl))+"px";
+    if(wr)$("col-result").style.flexBasis=
+      Math.max(MIN_R,Math.min(maxR,wr))+"px";
+  }
+  if(saved.l||saved.r)apply(saved.l,saved.r);
+  function remember(){
+    try{localStorage.setItem("vr-cols",JSON.stringify({
+      l:Math.round($("col-video").getBoundingClientRect().width),
+      r:Math.round($("col-result").getBoundingClientRect().width)}));}catch(e){}
+  }
+  function bind(splitter,target,key,dir){
+    splitter.addEventListener("mousedown",(e)=>{
+      e.preventDefault();
+      const startW=target.getBoundingClientRect().width,startX=e.clientX;
+      splitter.classList.add("on");document.body.classList.add("dragging");
+      const move=(ev)=>{apply(key==="l"?startW+(ev.clientX-startX)*dir:null,
+                              key==="r"?startW+(ev.clientX-startX)*dir:null);};
+      const up=()=>{splitter.classList.remove("on");
+        document.body.classList.remove("dragging");remember();
+        window.removeEventListener("mousemove",move);
+        window.removeEventListener("mouseup",up);};
+      window.addEventListener("mousemove",move);
+      window.addEventListener("mouseup",up);
+    });
+  }
+  bind($("split-1"),$("col-video"),"l",+1);   // 右拉=加宽左栏
+  bind($("split-2"),$("col-result"),"r",-1);  // 左拉=加宽右栏
+})();
+
+/* ---------- 左栏:视频 ---------- */
+async function setVideo(path){
+  state.video = path; state.info = null; state.transcoded = false;
+  $("video-path").value = path;
+  try{
+    const d = await jfetch(`/video/info?path=${encodeURIComponent(path)}`);
+    state.info = d;
+    bindPlayer(path, d);
+    const mm = Math.floor(d.duration_s/60), ss = (d.duration_s%60).toFixed(1);
+    $("vinfo").innerHTML =
+      `<span>时长 <b>${mm}分${ss}秒</b></span><span>帧数 <b>${d.n_frames}</b></span>` +
+      `<span>帧率 <b>${d.fps} fps</b></span><span>分辨率 <b>${d.width}×${d.height}</b></span>` +
+      `<span>大小 <b>${d.size_mb} MB</b></span>` +
+      `<span>封装 <b>${esc(d.container||d.extension||"?")}</b></span>` +
+      `<span>浏览器可播 <b>${d.browser_playable?"✓":"✗"}</b></span>`;
+    $("video-note").textContent = d.browser_playable ? "" :
+      "该封装浏览器不能直接播放——已尝试自动转封装;也可点「转封装」按钮(约1分钟)。";
+  }catch(e){
+    $("vinfo").innerHTML = `<span style="color:var(--bad)">读取失败: ${esc(e.message)}</span>`;
+  }
+}
+
+let _transcodeTried = false;
+function bindPlayer(path, info){
+  const vp = $("video-player");
+  if (info.browser_playable){
+    vp.src = `/video/file?path=${encodeURIComponent(path)}`;
+    vp.onerror = () => {
+      if (_transcodeTried) return;
+      _transcodeTried = true;
+      $("video-note").textContent = "无法播放(封装异常)→ 自动转封装中,约1分钟…";
+      startTranscode(path, vp);
+    };
+  } else {
+    $("video-note").textContent = "检测到浏览器不支持的封装 → 自动转封装中,约1分钟…";
+    startTranscode(path, vp);
+  }
+  if (!$("btn-transcode")){
+    const b = document.createElement("button");
+    b.className = "mini"; b.id = "btn-transcode"; b.textContent = "⟳ 转封装播放";
+    b.onclick = () => startTranscode(state.video, vp);
+    $("col-video").querySelector(".modes").appendChild(b);
+  }
+}
+async function startTranscode(path, vp){
+  try{
+    const d = await jfetch(`/video/transcode?path=${encodeURIComponent(path)}`);
+    if (d.url){
+      state.transcoded = true;
+      vp.src = d.url;
+      vp.load(); vp.play().catch(()=>{});
+      $("video-note").textContent = d.note || "转封装完成,可播放";
+    } else {
+      $("video-note").textContent = "转封装失败: " + esc(d.error||"未知");
+    }
+  }catch(e){ $("video-note").textContent = "转封装失败: " + esc(e.message); }
+}
+$("btn-loadpath").onclick = () => { const p = $("video-path").value.trim();
+  if(p) setVideo(p); };
+async function uploadVideo(file){
+  const fd=new FormData();fd.append("file",file);toast(`上传 ${file.name} …`);
+  const d=await jfetch("/search/upload",{method:"POST",body:fd});
+  setVideo(d.path);
+}
+(function(){
+  const z=$("video-drop"),f=$("video-file");
+  z.onclick=()=>f.click();
+  z.ondragover=e=>{e.preventDefault();z.classList.add("over");};
+  z.ondragleave=()=>z.classList.remove("over");
+  z.ondrop=e=>{e.preventDefault();z.classList.remove("over");
+    if(e.dataTransfer.files[0])uploadVideo(e.dataTransfer.files[0]);};
+  f.onchange=()=>{if(f.files[0])uploadVideo(f.files[0]);};
+})();
+
+/* ---------- 通用工具:转义 + 极简 Markdown(零外部依赖) ---------- */
+function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function md(src){
+  let t = esc(src);
+  t = t.replace(/```([\s\S]*?)```/g,(m,c)=>`<pre>${c.trim()}</pre>`);
+  t = t.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  t = t.replace(/^###### (.*)$/gm,"<h6>$1</h6>").replace(/^##### (.*)$/gm,"<h5>$1</h5>")
+       .replace(/^#### (.*)$/gm,"<h4>$1</h4>").replace(/^### (.*)$/gm,"<h3>$1</h3>")
+       .replace(/^## (.*)$/gm,"<h2>$1</h2>").replace(/^# (.*)$/gm,"<h1>$1</h1>");
+  t = t.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>");
+  t = t.replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![^*])/g,"$1<i>$2</i>");
+  t = t.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // 列表(连续的 - / * / 数字.)
+  const lines = t.split("\n"); let out = [], i = 0;
+  while (i < lines.length){
+    if (/^\s*\|.*\|\s*$/.test(lines[i])){
+      const tbl = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){
+        const cells = lines[i].trim().replace(/^\||\|$/g,"").split("|")
+          .map(c=>c.trim());
+        if (!/^:?-{2,}:?$/.test(cells.join("")))   // 跳过分隔行
+          tbl.push(`<tr>${cells.map((c,k)=>k===0?"<th>"+c+"</th>":"<td>"+c+"</td>").join("")}</tr>`);
+        i++;
+      }
+      out.push(`<table class="mdtable">${tbl.join("")}</table>`); continue;
+    }
+    if (/^\s*[-*] /.test(lines[i])){
+      const ul = [];
+      while (i < lines.length && /^\s*[-*] /.test(lines[i]))
+        ul.push(`<li>${lines[i].replace(/^\s*[-*] /,"")}</li>`), i++;
+      out.push(`<ul>${ul.join("")}</ul>`); continue;
+    }
+    if (/^\s*\d+\. /.test(lines[i])){
+      const ol = [];
+      while (i < lines.length && /^\s*\d+\. /.test(lines[i]))
+        ol.push(`<li>${lines[i].replace(/^\s*\d+\. /,"")}</li>`), i++;
+      out.push(`<ol>${ol.join("")}</ol>`); continue;
+    }
+    if (lines[i].trim()===""){i++; continue;}
+    let p = lines[i++];
+    while (i < lines.length && lines[i].trim()!=="" && !/^\s*[-*] |^\s*\d+\. |^#/.test(lines[i]))
+      p += "<br>" + lines[i++];
+    out.push(`<p>${p}</p>`);
+  }
+  return out.join("");
+}
+
+/* ---------- 中栏:对话 ---------- */
+function addMsg(cls, text, opts={}){
+  const d=document.createElement("div");d.className="msg "+cls;
+  if(opts.md)d.innerHTML=md(text);else d.textContent=text;
+  if(opts.img){const im=document.createElement("img");im.className="thumbchip";im.src=opts.img;d.appendChild(im);}
+  $("chat-log").appendChild(d);scrollChat();return d;
+}
+function scrollChat(){const c=$("chat-log");c.scrollTop=c.scrollHeight;}
+function agentNote(text){addMsg("agent note",text);}
+
+/* 附加参考图 */
+$("btn-attach").onclick=()=>$("ref-file").click();
+$("ref-file").onchange=async()=>{
+  const f=$("ref-file").files[0];if(!f)return;
+  const fd=new FormData();fd.append("file",f);
+  toast("上传参考图…");
+  const d=await jfetch("/search/upload",{method:"POST",body:fd});
+  state.ref=d.path;
+  $("refchip").classList.add("on");$("refchip-img").src=`/video/file?path=${encodeURIComponent(d.path)}`
+    ;$("refchip-name").textContent=f.name;
+};
+$("refchip-del").onclick=()=>{state.ref=null;$("refchip").classList.remove("on");};
+
+/* 直接对话 */
+$("btn-chat").onclick=async()=>{
+  const q=$("chat-input").value.trim();if(!q)return;
+  addMsg("user",q);$("chat-input").value="";
+  state.chat.push({role:"user",content:q});
+  const wait=addMsg("agent note","…思考中");
+  try{
+    const d=await jfetch("/chat",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({messages:state.chat})});
+    wait.remove();
+    if(d.reply){addMsg("agent",d.reply,{md:true});state.chat.push({role:"assistant",content:d.reply});}
+    else {addMsg("agent note",d.note||"LLM 无响应");}
+  }catch(e){wait.remove();addMsg("agent note","对话失败: "+e.message);}
+  state.chat=state.chat.slice(-16);
+};
+
+/* 检索(智能体任务) */
+let running=false;
+$("btn-search").onclick=async()=>{
+  const q=$("chat-input").value.trim();
+  if(!state.video){agentNote("请先在左栏选择/载入视频。");return;}
+  if(!q && !state.ref){agentNote("请输入检索描述,或用 📎 附加参考图。");return;}
+  if(running){agentNote("已有检索在执行,稍候…");return;}
+  running=true;$("btn-search").disabled=true;
+  const mode=document.querySelector('input[name=mode]:checked').value;
+  addMsg("user",q||"(以图搜人)",state.ref?{img:`/video/file?path=${encodeURIComponent(state.ref)}`}:{});
+  $("chat-input").value="";
+  const ref=state.ref;state.ref=null;$("refchip").classList.remove("on");
+  const box=document.createElement("div");box.className="runbox";
+  box.innerHTML=`<div class="t"><span>🔍 检索任务 · ${mode==="auto"?"智能体":"确定性"}</span></div>`;
+  const cancelBtn=document.createElement("button");
+  cancelBtn.className="mini";cancelBtn.textContent="✕ 取消";
+  cancelBtn.style.cssText="float:right;margin:0";
+  box.querySelector(".t").appendChild(cancelBtn);
+  let pend=null;const pendLine=(msg)=>{
+    if(!pend){pend=document.createElement("div");pend.className="ln info";box.appendChild(pend);}
+    pend.textContent=msg;scrollChat();};
+  const line=(t,c)=>{if(pend){pend.remove();pend=null;}
+    const l=document.createElement("div");l.className="ln "+(c||"");
+    l.textContent=t;box.appendChild(l);scrollChat();};
+  $("chat-log").appendChild(box);scrollChat();
+  pendLine("🤔 智能体决策中…");
+  try{
+    const {job_id}=await jfetch("/search",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({video:state.video,query:q,ref,mode})});
+    const es=new EventSource(`/search/${job_id}/events`);
+    let esClosed=false;
+    cancelBtn.onclick=async()=>{
+      if(esClosed)return;
+      esClosed=true;es.close();
+      try{await jfetch(`/search/${job_id}/cancel`,{method:"POST"});}catch(_){}
+      if(pend){pend.remove();pend=null;}
+      line("✕ 已取消任务","bad");
+      running=false;$("btn-search").disabled=false;
+    };
+    es.onmessage=(m)=>{
+      const e=JSON.parse(m.data);
+      if(e.type==="start")line(`▸ 任务 ${job_id.slice(0,8)} 开始`,"info");
+      else if(e.type==="note")line(`ℹ ${e.msg}`,"info");
+      else if(e.type==="engine")line(`⚙ ${e.line}`,null);
+      else if(e.type==="step")line(
+        `${e.status==="ok"?"✓":e.status==="failed"?"✗":"…"} ${e.tool}`+
+        `${e.duration_s!=null?` (${e.duration_s}s)`:""}`+
+        `${e.status==="failed"?" — "+(e.error||"").slice(0,140):""}`,
+        e.status==="ok"?"ok":e.status==="failed"?"bad":"info");
+      else if(e.type==="case")line(`◈ 疑难案例 ${e.case_id}`,"info");
+      else if(e.type==="final")line(`◈ 判定: ${e.verdict}`,"info");
+      else if(e.type==="job_done"){if(pend){pend.remove();pend=null;}
+        es.close();finish(e.result,job_id);}
+      if(e.type!=="job_done")pendLine("⏳ 执行中…");
+    };
+    es.onerror=()=>{};
+  }catch(e){if(pend){pend.remove();pend=null;}agentNote("检索提交失败: "+e.message);}
+  function finish(res,job_id){
+    running=false;$("btn-search").disabled=false;
+    const card=document.createElement("div");
+    card.className="finalcard "+(res.verdict==="hit"?"hit":"miss");
+    const v = res.verdict === "hit" ? "✅ 命中"
+            : res.verdict === "user_input" ? "💬 需补充信息" : "⚠️ 未命中";
+    card.innerHTML=`<div class="verdict ${res.verdict}">${v}</div>`+
+      (res.intervals&&res.intervals.length
+        ?`<div class="meta">命中 ${res.intervals.length} 段 — 详见右侧播放;可对时间段逐段确认。</div>`:"")+
+      `<div class="meta">尝试: ${esc((res.tried||[]).join(", ")||"—")}<br>`+
+      `覆盖: ${esc(res.coverage||"—")}<br>原因: ${esc(res.reason||"—")}<br>建议: ${esc(res.suggestion||"—")}</div>`;
+    if(res.case_id){
+      const ops=document.createElement("div");ops.className="ops";
+      const b1=document.createElement("button");b1.className="mini";b1.textContent="✓ 确认命中";
+      b1.onclick=()=>openConfirm(res.case_id,res.intervals||[]);
+      const b2=document.createElement("button");b2.className="mini";b2.textContent="✗ 否认";
+      b2.onclick=()=>{if(confirm("否认本案例命中结论?"))postConfirm(res.case_id,{});};
+      ops.append(b1,b2);card.appendChild(ops);
+    }
+    $("chat-log").appendChild(card);scrollChat();
+    renderResults(res,job_id);
+  }
+};
+
+/* ---------- 右栏:结果片段 ---------- */
+function renderResults(res,jobId){
+  const list=$("result-list");list.innerHTML="";
+  const ivs=res.intervals||[];
+  if(!ivs.length){
+    list.innerHTML=`<div class="empty">无命中时间段<br><span style="font-size:11px">${esc((res.reason||"").slice(0,120))}</span></div>`;
+    return;
+  }
+  const arts=res.artifacts||[];
+  const fps=state.info?state.info.fps:25;
+  ivs.forEach((iv,i)=>{
+    const seg=document.createElement("div");seg.className="seg";
+    const f0=Math.round(iv.start_s*fps),f1=Math.round(iv.end_s*fps);
+    seg.innerHTML=(arts[i]?`<img src="${arts[i]}">`:"")+
+      `<div class="row"><span class="tt">[${(+iv.start_s).toFixed(1)}s – ${(+iv.end_s).toFixed(1)}s]</span>`+
+      `<button data-i="${i}">▶ 播放跟踪片段</button></div>`+
+      `<div class="st">帧 ${f0}–${f1} · 约${Math.max(1,f1-f0)}帧`+
+      (iv.evidence?` · 证据 ${esc(JSON.stringify(iv.evidence).slice(0,60))}`:"")+`</div>`;
+    seg.querySelector("button").onclick=async()=>{
+      document.querySelectorAll(".seg").forEach(s=>s.classList.remove("cur"));
+      seg.classList.add("cur");
+      const btn=seg.querySelector("button");
+      btn.textContent="⏳ 生成跟踪片段…";btn.disabled=true;
+      try{
+        const d=await jfetch(`/video/tracked-clip?job=${jobId}&i=${i}`);
+        const p=$("result-player");
+        p.src=d.url; p.load(); p.play();
+        btn.textContent="▶ 重播跟踪片段";
+        toast(d.note||"跟踪片段已生成");
+      }catch(e){
+        btn.textContent="▶ 播放原视频段";btn.disabled=false;
+        toast("跟踪片段生成失败,回退原视频: "+e.message);
+        const p=$("result-player");
+        p.src=$("video-player").src.split("#")[0]+`#t=${iv.start_s},${iv.end_s}`;
+        p.play();
+      }
+    };
+    list.appendChild(seg);
+  });
+}
+
+/* ---------- 案例库 ---------- */
+async function loadCases(){
+  try{
+    const d=await jfetch("/cases");
+    $("cases-count").textContent=`共 ${d.n} 条,已确认 ${d.n_confirmed} 条`;
+    $("cases-body").innerHTML=d.cases.slice().reverse().map(c=>`
+      <tr><td class="mono">${c.id}</td><td class="mono">${(c.ts||"").slice(5,19)}</td>
+      <td>${c.query||""}</td><td>${c.query_type||""}</td><td>${c.outcome||""}</td>
+      <td>${c.human_confirmed?'<span class="badge conf">已确认</span>':'<span class="badge pend">待确认</span>'}</td>
+      <td>${c.human_confirmed?"":`<button class="mini" data-confirm="${c.id}">✓ 确认</button>`}
+        <details><summary>过程</summary><pre>${JSON.stringify({plan:c.plan,
+          attempts:(c.attempts||[]).map(a=>a.tool),outcome:c.outcome,
+          reasoning:c.agent_reasoning,gt:c.gt},null,2)}</pre></details></td></tr>`).join("")
+      ||`<tr><td colspan="7">暂无案例</td></tr>`;
+    document.querySelectorAll("[data-confirm]").forEach(b=>b.onclick=()=>{
+      const c=d.cases.find(x=>x.id===b.dataset.confirm)||{};
+      let pre=[];
+      for(const a of (c.attempts||[])){
+        const m=(((a.envelope||{}).summary||{})["metrics.json"]||{});
+        if(m.intervals&&m.intervals.length){pre=m.intervals;break;}
+      }
+      openConfirm(b.dataset.confirm,pre);
+    });
+  }catch(e){$("cases-body").innerHTML=`<tr><td colspan="7">加载失败: ${e.message}</td></tr>`;}
+}
+
+/* ---------- 配置与演化 ---------- */
+async function loadConfig(){
+  try{
+    const d=await jfetch("/config");
+    const rt=d.runtime||{};
+    const fmt=(o)=>JSON.stringify(o,null,2).replace(/</g,"&lt;");
+    $("config-body").innerHTML=`<pre>${fmt({summary:d.summary,
+      "thresholds.json":rt.thresholds||{},"confusables.json":rt.confusables||{},
+      "prompts.json":rt.prompts||{}})}</pre>`;
+    $("veto-state").textContent=d.vetoed?"已冻结 (.veto 存在)":"未冻结";
+    const ev=await jfetch("/evolutions");
+    $("evol-count").textContent=`共 ${ev.n} 条`;
+    if(ev.n)$("evol-log").textContent=ev.events.map(e=>JSON.stringify(e)).join("\n");
+    const s=await jfetch("/settings");
+    $("set-baseurl").value=s.llm_base_url||"";$("set-model").value=s.llm_model||"";
+    $("set-key-cur").textContent=s.llm_api_key_masked||"(未配置)";
+    $("set-zhipu-cur").textContent=s.zhipuai_api_key_masked||"(未配置)";
+    $("set-dash-cur").textContent=s.dashscope_api_key_masked||"(未配置)";
+    $("set-note").textContent=`保存即生效并写入 ${s.env_file}`;
+  }catch(e){$("config-body").textContent="加载失败: "+e.message;}
+}
+$("btn-save-settings").onclick=async()=>{
+  const body={llm_base_url:$("set-baseurl").value.trim()||null,
+              llm_model:$("set-model").value.trim()||null};
+  if($("set-key").value.trim())body.llm_api_key=$("set-key").value.trim();
+  if($("set-zhipu").value.trim())body.zhipuai_api_key=$("set-zhipu").value.trim();
+  if($("set-dash").value.trim())body.dashscope_api_key=$("set-dash").value.trim();
+  try{await jfetch("/settings",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    toast("设置已保存并生效 ✓");$("set-key").value="";$("set-zhipu").value="";$("set-dash").value="";
+    loadConfig();
+  }catch(e){toast("保存失败: "+e.message);}
+};
+$("btn-veto").onclick=async()=>{
+  const cur=(await jfetch("/config")).vetoed;
+  const d=await jfetch("/config/veto",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({freeze:!cur,reason:"GUI toggle"})});
+  toast(d.vetoed?"演化已冻结":"演化已解冻");loadConfig();
+};
+$("btn-evolve").onclick=async()=>{
+  $("evolve-out").textContent="演化执行中…";
+  try{const d=await jfetch("/evolve");
+    $("evolve-out").textContent=JSON.stringify(d,null,2).slice(0,3000);}
+  catch(e){$("evolve-out").textContent="演化失败: "+e.message;}
+};
+
+/* ---------- 确认 GT 模态 ---------- */
+let _confirmCaseId=null;
+function _ivRow(s,e){const d=document.createElement("div");d.className="iv-row";
+  d.innerHTML=`<input type="number" step="0.1" value="${s}" placeholder="起始秒">
+    <span style="color:var(--dim)">→</span>
+    <input type="number" step="0.1" value="${e}" placeholder="结束秒">
+    <button class="del">✕</button>`;
+  d.querySelector(".del").onclick=()=>d.remove();return d;}
+function openConfirm(caseId,intervals){
+  _confirmCaseId=caseId;const rows=$("confirm-rows");rows.innerHTML="";
+  (intervals.length?intervals:[null]).forEach(iv=>
+    rows.appendChild(_ivRow(iv?(+iv.start_s).toFixed(1):"",iv?(+iv.end_s).toFixed(1):"")));
+  $("confirm-modal").classList.add("on");}
+$("confirm-add").onclick=()=>$("confirm-rows").appendChild(_ivRow("",""));
+$("confirm-cancel").onclick=()=>$("confirm-modal").classList.remove("on");
+$("confirm-ok").onclick=()=>{
+  const its=[];
+  for(const row of document.querySelectorAll("#confirm-rows .iv-row")){
+    const [s,e]=row.querySelectorAll("input");
+    if(s.value!==""&&e.value!=="")its.push([Math.max(0,+s.value),+e.value]);}
+  if(!its.length){toast("请至少填写一个时间段(或点取消)");return;}
+  $("confirm-modal").classList.remove("on");
+  postConfirm(_confirmCaseId,{hit_intervals:its});};
+async function postConfirm(caseId,gt){
+  try{await jfetch(`/cases/${caseId}/confirm`,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({gt})});
+    toast(Object.keys(gt).length?"已确认 — 成为演化层养料 ✓":"已否认 — 案例记入演化层");
+    if($("tab-cases").classList.contains("on"))loadCases();
+  }catch(e){toast("确认失败: "+e.message);}}
+</script>
+</body>
+</html>

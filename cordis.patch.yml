@@ -1,0 +1,24 @@
+# dsh-video-retrieval bundle patch: the global rows that ship with the plugin.
+# The dsh.bundle manifest in package.json makes this patch compose automatically
+# when the package is installed via `dsh plugin add`.
+#
+# What lives here: the client console (an overlay in the web app + sidebar
+# button) and its backend launcher.  The vr_* tools are registered by the
+# preset row (mode-scoped), so they are NOT in this patch.
+#
+# Portability: !!js require.resolve() runs in the HOST composition context
+# (the profile directory), so it resolves the package wherever pnpm installed
+# it.  The preset row config is rewritten by scripts/install.sh with absolute
+# paths resolved from the same package location.
+- insert:
+    - id: vr-console
+      name: dsh-video-retrieval
+      config:
+        clientOnly: true
+        python: !!js "process.env.VTL_PY || 'python3'"
+        engineDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/engine'"
+        serverDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/server'"
+        configDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/config'"
+        dataDir: !!js "require('node:os').homedir() + '/.dsh/video-retrieval'"
+        datasetDir: !!js "process.env.BENCH_DATA || require('node:os').homedir() + '/dev/video-retrieval/dataset'"
+        backendUrl: 'http://127.0.0.1:8788'

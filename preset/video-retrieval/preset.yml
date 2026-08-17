@@ -1,0 +1,3 @@
+name: 视频检索模式
+description: 监控视频检索 Agent：自然语言/参考图 → 时间区间 + 逐帧轨迹 + 标注视频；本地引擎 + 云边协同 + 自进化闭环（plan-then-code）。
+order: 5
