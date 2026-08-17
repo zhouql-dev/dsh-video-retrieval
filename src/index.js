@@ -28,9 +28,10 @@ const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
 // then common venv locations, then plain python3.
 function discoverPython() {
   if (process.env.VTL_PY) return process.env.VTL_PY
+  const home = os.homedir()
   const candidates = [
-    path.join(os.homedir(), '.video-analyst', 'venv', 'bin', 'python'),
-    path.join(PKG_ROOT, '..', '..', '..', '..', 'dev', 'video-retrieval', 'video', 'bin', 'python'),
+    path.join(home, '.video-analyst', 'venv', 'bin', 'python'),
+    path.join(home, 'dev', 'video-retrieval', 'video', 'bin', 'python'),
   ]
   for (const c of candidates) {
     try { if (fs.existsSync(c)) return c } catch { /* ignore */ }
