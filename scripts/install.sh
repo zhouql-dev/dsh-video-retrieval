@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# install.sh — one-shot install for the dsh-video-retrieval plugin.
+# install.sh — deploy the preset + download weights + smoke-test.
 #
-# What it does:
-#   1. Builds the host half (dist/index.js + dist/index.<hash>.js).
+# The PACKAGE itself is installed with `dsh plugin add` (see README):
+#   dsh plugin --profile web add github:zhouql-dev/dsh-video-retrieval
+# If the package is not yet in the profile, this script falls back to
+# installing it from this local checkout (`dsh plugin add file:<here>`).
+#
+# What this script does:
+#   1. Builds the host half (dist/index.js).
 #   2. Resolves the installed package's absolute path from the profile.
 #   3. Rewrites the preset's path placeholders with those absolutes.
 #   4. Deploys the preset into ~/.dsh/.agent-presets/video-retrieval/.
-#   5. Installs the package into the web profile via `dsh plugin add`.
-#   6. Downloads weights if missing (via setup.sh).
-#   7. Smoke-tests the build and client bundle.
-#
-# Run after cloning the repo or after editing src/ / server/ / engine/.
+#   5. Downloads weights if missing (via setup.sh).
+#   6. Smoke-tests the build and client bundle.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
@@ -22,10 +24,10 @@ BENCH_DATA="${BENCH_DATA:-}"
 DATA_DIR="${DATA_DIR:-$DSH_HOME_DIR/video-retrieval}"
 cd "$HERE"
 
-echo "[1/7] building host half..."
+echo "[1/6] building host half..."
 node build.mjs
 
-echo "[2/7] resolving package path..."
+echo "[2/6] resolving package path..."
 PKG_ROOT=$(node -e "const {createRequire}=require('node:module'); const r=createRequire('$PROFILE_DIR/package.json'); console.log(r.resolve('dsh-video-retrieval/package.json').replace(/\\/package\\.json$/, ''))" 2>/dev/null || echo "")
 if [ -z "$PKG_ROOT" ]; then
   # Package not yet installed in the profile — install first, then resolve.
@@ -43,7 +45,7 @@ ENGINE_DIR="$PKG_ROOT/engine"
 SERVER_DIR="$PKG_ROOT/server"
 CONFIG_DIR="$PKG_ROOT/config"
 
-echo "[3/7] rewriting preset placeholders (into a deploy copy)..."
+echo "[3/6] rewriting preset placeholders (into a deploy copy)..."
 STAGE="$(mktemp -d)"
 rsync -a preset/video-retrieval/ "$STAGE/video-retrieval/"
 sed -i '' \
@@ -55,19 +57,16 @@ sed -i '' \
   -e "s|__DATASET_DIR__|$BENCH_DATA|g" \
   "$STAGE/video-retrieval/agent.cordis.yml"
 
-echo "[4/7] deploying preset to $DSH_HOME_DIR/.agent-presets/video-retrieval/"
+echo "[4/6] deploying preset to $DSH_HOME_DIR/.agent-presets/video-retrieval/"
 DEPLOY="$DSH_HOME_DIR/.agent-presets/video-retrieval"
 mkdir -p "$(dirname "$DEPLOY")"
 rsync -a --delete --exclude '__pycache__' "$STAGE/video-retrieval/" "$DEPLOY/"
 rm -rf "$STAGE"
 
-echo "[5/7] ensuring package is in the web profile..."
-"$DSH_BIN" plugin --profile web add "file:$HERE" >/dev/null 2>&1 || true
-
-echo "[6/7] downloading weights if needed..."
+echo "[5/6] downloading weights if needed..."
 bash scripts/setup.sh || echo "       (weight download skipped — run scripts/setup.sh after uploading weights to GitHub Releases)"
 
-echo "[7/7] smoke tests..."
+echo "[6/6] smoke tests..."
 mkdir -p node_modules
 ln -sfn "$PROFILE_DIR/node_modules/@deepseek-ai" node_modules/@deepseek-ai 2>/dev/null || true
 
