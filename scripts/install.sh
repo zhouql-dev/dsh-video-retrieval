@@ -19,7 +19,16 @@ DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
 PROFILE_DIR="$DSH_HOME_DIR/profiles/web"
 PATCH_FILE="$PROFILE_DIR/cordis.patch.yml"
 DSH_BIN="${DSH_BIN:-$(command -v dsh 2>/dev/null || echo npx @deepseek-ai/dsh)}"
-VENV_PY="${VTL_PY:-python3}"
+# Python with the CV deps (torch/ultralytics/...). Prefer VTL_PY, then discover
+# a venv that imports torch, then fall back to python3.
+if [ -n "${VTL_PY:-}" ]; then
+  VENV_PY="$VTL_PY"
+else
+  VENV_PY="python3"
+  for cand in "$HOME/.video-analyst/venv/bin/python" "$HERE/../video/bin/python" "$HERE/video/bin/python"; do
+    if [ -x "$cand" ] && "$cand" -c "import torch" >/dev/null 2>&1; then VENV_PY="$cand"; break; fi
+  done
+fi
 BENCH_DATA="${BENCH_DATA:-}"
 DATA_DIR="${DATA_DIR:-$DSH_HOME_DIR/video-retrieval}"
 cd "$HERE"
@@ -64,7 +73,7 @@ rsync -a --delete --exclude '__pycache__' "$STAGE/video-retrieval/" "$DEPLOY/"
 rm -rf "$STAGE"
 
 echo "[5/6] downloading weights if needed..."
-bash scripts/setup.sh || echo "       (weight download skipped — run scripts/setup.sh after uploading weights to GitHub Releases)"
+VTL_INSTALL_DIR="$PKG_ROOT" bash scripts/setup.sh || echo "       (weight download skipped — run scripts/setup.sh after uploading weights to GitHub Releases)"
 
 echo "[6/6] smoke tests..."
 mkdir -p node_modules

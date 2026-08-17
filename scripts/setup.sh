@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# setup.sh — download model weights into the package's weights/ directory.
+# setup.sh — download model weights into the INSTALLED package's weights/ dir.
 # Skips files that already exist (idempotent).
 #
 # Weights are ~0.5 GB and not shipped in git/npm; this script pulls them from
 # GitHub Releases (or a local mirror via WEIGHTS_URL_PREFIX env).
+#
+# Destination: by default this script's own package dir (for a standalone clone);
+# install.sh overrides it with VTL_INSTALL_DIR so weights land where the engine
+# actually looks (the pnpm-installed package under ~/.dsh/profiles/web/node_modules).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEST="${VTL_INSTALL_DIR:-$HERE}"
 PREFIX="${WEIGHTS_URL_PREFIX:-https://github.com/zhouql-dev/dsh-video-retrieval/releases/latest/download}"
-mkdir -p "$HERE/weights/osnet" "$HERE/weights/clip"
+mkdir -p "$DEST/weights/osnet" "$DEST/weights/clip"
 
 download() {
   local name="$1" url="$2" dest="$3"
@@ -20,9 +25,9 @@ download() {
 OSNET_X0_25="osnet_x0_25_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip_jitter.pth"
 OSNET_X1_0="osnet_x1_0_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip_jitter.pth"
 
-download yolov8s-worldv2.pt "$PREFIX/yolov8s-worldv2.pt" "$HERE/weights/../yolov8s-worldv2.pt"
-download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$HERE/weights/osnet/$OSNET_X0_25"
-download osnet_x1_0.pth         "$PREFIX/$OSNET_X1_0"       "$HERE/weights/osnet/$OSNET_X1_0"
-download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$HERE/weights/clip/ViT-B-32.pt"
+download yolov8s-worldv2.pt "$PREFIX/yolov8s-worldv2.pt" "$DEST/yolov8s-worldv2.pt"
+download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$DEST/weights/osnet/$OSNET_X0_25"
+download osnet_x1_0.pth         "$PREFIX/$OSNET_X1_0"       "$DEST/weights/osnet/$OSNET_X1_0"
+download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$DEST/weights/clip/ViT-B-32.pt"
 
-echo "weights ready in $HERE/weights/"
+echo "weights ready in $DEST/weights/"
