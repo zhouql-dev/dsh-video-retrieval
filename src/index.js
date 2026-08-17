@@ -24,6 +24,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // `!!js` scope (which has no `require`) and of the profile/preset baseUrl.
 const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
+// Discover a Python with the CV deps (torch/ultralytics/...): VTL_PY env,
+// then common venv locations, then plain python3.
+function discoverPython() {
+  if (process.env.VTL_PY) return process.env.VTL_PY
+  const candidates = [
+    path.join(os.homedir(), '.video-analyst', 'venv', 'bin', 'python'),
+    path.join(PKG_ROOT, '..', '..', '..', '..', 'dev', 'video-retrieval', 'video', 'bin', 'python'),
+  ]
+  for (const c of candidates) {
+    try { if (fs.existsSync(c)) return c } catch { /* ignore */ }
+  }
+  return 'python3'
+}
+
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {Record<string, unknown>} config row config from agent.cordis.yml
@@ -31,7 +45,7 @@ const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
 export function apply(ctx, config = {}) {
   const str = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
   const cfg = {
-    python: str(config.python) || process.env.VTL_PY || 'python3',
+    python: str(config.python) || discoverPython(),
     engineDir: str(config.engineDir) || path.join(PKG_ROOT, 'engine'),
     serverDir: str(config.serverDir) || path.join(PKG_ROOT, 'server'),
     configDir: str(config.configDir) || path.join(PKG_ROOT, 'config'),
