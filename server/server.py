@@ -546,7 +546,9 @@ def tracked_clip(job: str, i: int):
     vf_parts = []
     for k, (fr, bx) in enumerate(boxes):
         nxt = boxes[k + 1][0] - 1 if k + 1 < len(boxes) else 1 << 30
-        x, y, w, h = bx
+        # matches.json boxes are [x1,y1,x2,y2] (xyxy) — convert to drawbox xywh
+        x1, y1, x2, y2 = bx[:4]
+        x, y, w, h = int(x1), int(y1), max(0, int(x2 - x1)), max(0, int(y2 - y1))
         vf_parts.append(
             f"drawbox=x={x}:y={y}:w={w}:h={h}:color=red@0.85:t=4"
             f":enable='between(n,{max(0, fr - floor_f)},{max(0, nxt - floor_f)})'")
