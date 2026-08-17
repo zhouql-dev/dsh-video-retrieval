@@ -191,6 +191,44 @@ def detect_and_crop(model, frame, idx, fps, crops_dir, min_area, conf=0.2,
     return entries
 
 
+def track_and_crop(model, frame, idx, fps, crops_dir, min_area, conf=0.2,
+                   imgsz=640, device="mps", write_crop=True):
+    """BoT-SORT-tracked detection: run model.track (persist across calls) and return
+    per-frame entries {frame,t_s,box:[x1,y1,x2,y2],area,conf,track_id[,crop]}.
+
+    With write_crop=False the tracker still advances (callers should call this on
+    EVERY in-range frame to keep track continuity), but no crop JPG is written and
+    `crop` is omitted — bounding crop/VLM cost to the step cadence while keeping
+    dense tracked boxes for boxes.json / tracked-clip."""
+    r = model.track(frame, persist=True, tracker="botsort.yaml", conf=conf,
+                    imgsz=imgsz, device=device, verbose=False)[0]
+    entries = []
+    if r.boxes is None or not len(r.boxes):
+        return entries
+    xy = r.boxes.xyxy.cpu().numpy(); c = r.boxes.conf.cpu().numpy()
+    ids = r.boxes.id.cpu().numpy() if r.boxes.id is not None else [None] * len(xy)
+    H, W = frame.shape[:2]
+    for k, (x1, y1, x2, y2) in enumerate(xy):
+        w, h = x2 - x1, y2 - y1; area = w * h
+        if area < min_area:
+            continue
+        e = {"frame": idx, "t_s": round(idx / fps, 3),
+             "box": [round(float(v), 1) for v in (x1, y1, x2, y2)],
+             "area": int(area), "conf": round(float(c[k]), 3),
+             "track_id": None if (ids is None or ids[k] is None) else int(ids[k])}
+        if write_crop:
+            cx1, cy1 = max(0, int(x1 - 8)), max(0, int(y1 - 8))
+            cx2, cy2 = min(W, int(x2 + 8)), min(H, int(y2 + 8))
+            crop = frame[cy1:cy2, cx1:cx2]
+            name = f"crop_f{idx:05d}_k{k}.jpg"
+            cv2.imwrite(os.path.join(crops_dir, name), crop,
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+            e["crop"] = name
+        entries.append(e)
+    return entries
+
+
+
 def dedup_largest_per_window(manifest, window_s, fps):
     """Keep the largest-area crop per `window_s`-second bucket, sorted by frame."""
     buckets = {}

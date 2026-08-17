@@ -515,16 +515,17 @@ def tracked_clip(job: str, i: int):
     jobdir = os.path.join(JOBS_DIR, job)
     boxes = []                       # (frame, [x,y,w,h])
     for root, _, files in os.walk(jobdir):
-        if "matches.json" not in files:
-            continue
-        try:
-            for m in json.load(open(os.path.join(root, "matches.json"))):
-                fr, ts, bx = m.get("frame"), m.get("t_s"), m.get("box")
-                if fr is not None and ts is not None and bx \
-                        and start - 0.5 <= float(ts) <= end + 0.5:
-                    boxes.append((int(fr), [int(v) for v in bx[:4]]))
-        except (json.JSONDecodeError, OSError, ValueError):
-            continue
+        for fname in ("boxes.json", "matches.json"):
+            if fname not in files:
+                continue
+            try:
+                for m in json.load(open(os.path.join(root, fname))):
+                    fr, ts, bx = m.get("frame"), m.get("t_s"), m.get("box")
+                    if fr is not None and ts is not None and bx \
+                            and start - 0.5 <= float(ts) <= end + 0.5:
+                        boxes.append((int(fr), [int(v) for v in bx[:4]]))
+            except (json.JSONDecodeError, OSError, ValueError):
+                continue
     boxes = sorted(set((fr, tuple(bx)) for fr, bx in boxes))
     boxes = [(fr, list(bx)) for fr, bx in boxes]
     fps = 25.0

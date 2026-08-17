@@ -153,21 +153,25 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
         return any(lo <= fr <= hi for lo, hi in rs)
 
     def detect_pass(rs, tag):
-        """Detect + crop every step-th frame inside the given frame ranges."""
-        manifest, idx = [], 0
+        """Track (BoT-SORT) every frame + crop every step-th frame inside ranges."""
+        manifest, trajectory, idx = [], [], 0
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
-            if idx % args.step == 0 and in_ranges(idx, rs):
-                manifest += common.detect_and_crop(
+            if in_ranges(idx, rs):
+                crop_it = idx % args.step == 0
+                entries = common.track_and_crop(
                     person_model, frame, idx, fps, crops_dir, args.min_area,
-                    args.conf, args.imgsz, device)
+                    args.conf, args.imgsz, device, write_crop=crop_it)
+                trajectory += entries
+                if crop_it:
+                    manifest += entries
             idx += 1
             if idx % 1500 == 0:
                 print(f"  [{tag}] {idx}/{total} crops={len(manifest)}", flush=True)
-        return manifest, idx
+        return manifest, trajectory, idx
 
     def moments_from(manifest):
         """Embed-match each deduped moment vs the reference."""
@@ -181,7 +185,7 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
             sim = common.cosine(qv, v) if (qv is not None and v is not None) else 0.0
             moments.append({"id": f"f{m['frame']}", "frame": m["frame"], "t_s": m["t_s"],
                             "box": m["box"], "crop": m["crop"], "sim": round(float(sim), 4),
-                            "crop_bgr": crop})
+                            "track_id": m.get("track_id"), "crop_bgr": crop})
         return moments
 
     def score_moments(moments, with_vlm):
@@ -203,6 +207,7 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
                        "evidence": ("below vlm_topk" if with_vlm else "pass-1 (pre-escalation)") + "; abstains"}
             candidates.append({"id": m["id"], "frame": m["frame"], "t_s": m["t_s"],
                                "box": m["box"], "crop": m["crop"], "sim": m["sim"],
+                               "track_id": m.get("track_id"),
                                "results": {"hue": sig.hue_consistency(ref_crop, m["crop_bgr"]),
                                            "temporal": sig.temporal_curve(nearby),
                                            "vlm": vlm}})
@@ -215,7 +220,7 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
         return scored, hits
 
     # Stage 1: scan the cloud-grounded windows first (fast path)...
-    manifest, idx = detect_pass(ranges, "stage1")
+    manifest, trajectory, idx = detect_pass(ranges, "stage1")
     json.dump(manifest, open(os.path.join(out, "manifest.json"), "w"), indent=2)
     moments = moments_from(manifest)
     print(f"[stage1] {len(manifest)} crops -> {len(moments)} candidate moments")
@@ -239,8 +244,9 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
                 comp_ranges.append([f, f])
         print(f"[stage1b] grounding window(s) yielded no hit -> escalating to "
               f"remaining {len(comp_ranges)} ranges")
-        manifest2, idx2 = detect_pass(comp_ranges, "stage1b")
+        manifest2, trajectory2, idx2 = detect_pass(comp_ranges, "stage1b")
         manifest += manifest2
+        trajectory += trajectory2
         json.dump(manifest, open(os.path.join(out, "manifest.json"), "w"), indent=2)
         moments += moments_from(manifest2)
         scored, hits = score_moments(moments, with_vlm=True)
@@ -256,6 +262,7 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
     json.dump(hits, open(os.path.join(out, "matches.json"), "w"),
               ensure_ascii=False, indent=2)
     json.dump(intervals, open(os.path.join(out, "intervals.json"), "w"), indent=2)
+    json.dump(trajectory, open(os.path.join(out, "boxes.json"), "w"), ensure_ascii=False, indent=2)
 
     _annotate_hits(video, hits, f"{kind}", out, common)
     return _metrics("semantic_image", query, windows, args, scored, hits, intervals,
@@ -293,14 +300,19 @@ def run_semantic_text(video: str, query: str, windows: list[dict],
     scan_ranges = ground_mod.windows_to_frames(windows, fps, total, pad_s=args.pad_s)
     print(f"[semantic+text] noun={noun!r} scan_ranges={len(scan_ranges)}")
 
-    manifest, idx = [], 0
+    manifest, trajectory, idx = [], [], 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
-        if idx % args.step == 0 and any(lo <= idx <= hi for lo, hi in scan_ranges):
-            manifest += common.detect_and_crop(model, frame, idx, fps, crops_dir,
-                                                args.min_area, args.conf, args.imgsz, device)
+        if any(lo <= idx <= hi for lo, hi in scan_ranges):
+            crop_it = idx % args.step == 0
+            entries = common.track_and_crop(model, frame, idx, fps, crops_dir,
+                                            args.min_area, args.conf, args.imgsz, device,
+                                            write_crop=crop_it)
+            trajectory += entries
+            if crop_it:
+                manifest += entries
         idx += 1
     cap.release()
     dedup = common.dedup_largest_per_window(manifest, args.window, fps)
@@ -310,7 +322,8 @@ def run_semantic_text(video: str, query: str, windows: list[dict],
     for m in dedup:
         crop = cv2.imread(os.path.join(crops_dir, m["crop"]))
         v = provider.verify_target(query, crop) or {"match": "unclear"}
-        v.update({"frame": m["frame"], "t_s": m["t_s"], "box": m["box"], "crop": m["crop"]})
+        v.update({"frame": m["frame"], "t_s": m["t_s"], "box": m["box"], "crop": m["crop"],
+                  "track_id": m.get("track_id")})
         results.append(v)
         print(f"  f{m['frame']} t={m['t_s']}s match={v.get('match')} read={v.get('read','')}")
     hits = [r for r in results if r.get("match") in ("exact", "partial")]
@@ -318,6 +331,7 @@ def run_semantic_text(video: str, query: str, windows: list[dict],
     json.dump(results, open(os.path.join(out, "verify.json"), "w"), ensure_ascii=False, indent=2)
     json.dump(hits, open(os.path.join(out, "matches.json"), "w"), ensure_ascii=False, indent=2)
     json.dump(intervals, open(os.path.join(out, "intervals.json"), "w"), indent=2)
+    json.dump(trajectory, open(os.path.join(out, "boxes.json"), "w"), ensure_ascii=False, indent=2)
     _annotate_hits(video, hits, noun, out, common)
     return _metrics("semantic_text", query, windows, args, results, hits, intervals, idx,
                     extra={"noun": noun})
