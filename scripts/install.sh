@@ -50,20 +50,11 @@ if [ -z "$PKG_ROOT" ]; then
 fi
 echo "       package root: $PKG_ROOT"
 
-ENGINE_DIR="$PKG_ROOT/engine"
-SERVER_DIR="$PKG_ROOT/server"
-CONFIG_DIR="$PKG_ROOT/config"
-
-echo "[3/6] rewriting preset placeholders (into a deploy copy)..."
+echo "[3/6] rewriting the venv python placeholder (into a deploy copy)..."
 STAGE="$(mktemp -d)"
 rsync -a preset/video-retrieval/ "$STAGE/video-retrieval/"
 sed -i '' \
   -e "s|__VENV_PY__|$VENV_PY|g" \
-  -e "s|__ENGINE_DIR__|$ENGINE_DIR|g" \
-  -e "s|__SERVER_DIR__|$SERVER_DIR|g" \
-  -e "s|__CONFIG_DIR__|$CONFIG_DIR|g" \
-  -e "s|__DATA_DIR__|$DATA_DIR|g" \
-  -e "s|__DATASET_DIR__|$BENCH_DATA|g" \
   "$STAGE/video-retrieval/agent.cordis.yml"
 
 echo "[4/6] deploying preset to $DSH_HOME_DIR/.agent-presets/video-retrieval/"
@@ -85,8 +76,7 @@ if [ -n "$VIDEO" ] && [ -f "$VIDEO" ]; then
 const m = await import('file://$HERE/dist/index.js')
 const registered = []
 m.apply({ tools: { register: (t) => registered.push(t) } }, {
-  python: '$VENV_PY', engineDir: '$ENGINE_DIR', serverDir: '$SERVER_DIR',
-  configDir: '$CONFIG_DIR', dataDir: '$DATA_DIR', datasetDir: '$BENCH_DATA',
+  python: '$VENV_PY',
   backendUrl: 'http://127.0.0.1:8788',
 })
 console.log('registered tools (' + registered.length + '):', registered.map(t => t.name).join(', '))
@@ -110,8 +100,7 @@ else
 const m = await import('file://$HERE/dist/index.js')
 const registered = []
 m.apply({ tools: { register: (t) => registered.push(t) } }, {
-  python: '$VENV_PY', engineDir: '$ENGINE_DIR', serverDir: '$SERVER_DIR',
-  configDir: '$CONFIG_DIR', dataDir: '$DATA_DIR', datasetDir: '$BENCH_DATA',
+  python: '$VENV_PY',
   backendUrl: 'http://127.0.0.1:8788',
 })
 console.log('registered tools (' + registered.length + '):', registered.map(t => t.name).join(', '))

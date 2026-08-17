@@ -6,19 +6,17 @@
 # button) and its backend launcher.  The vr_* tools are registered by the
 # preset row (mode-scoped), so they are NOT in this patch.
 #
-# Portability: !!js require.resolve() runs in the HOST composition context
-# (the profile directory), so it resolves the package wherever pnpm installed
-# it.  The preset row config is rewritten by scripts/install.sh with absolute
-# paths resolved from the same package location.
+# Path resolution: the host plugin (src/index.js) resolves engineDir/serverDir/
+# configDir/dataDir from ITS OWN location via `import.meta.url` — NOT from
+# `!!js` expressions.  dsh >= 0.1.0-rc.7 evaluates `!!js` in an ESM scope with
+# no `require`, and `ctx.baseUrl` differs between the profile patch and the
+# bundle patch, so keeping paths out of this patch is the only version/install-
+# location-proof approach.  `python` is the only `!!js` here (process.env is
+# scope-safe, matching the shipped bundles).
 - insert:
     - id: vr-console
       name: dsh-video-retrieval
       config:
         clientOnly: true
         python: !!js "process.env.VTL_PY || 'python3'"
-        engineDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/engine'"
-        serverDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/server'"
-        configDir: !!js "require('node:path').dirname(require.resolve('dsh-video-retrieval/package.json')) + '/config'"
-        dataDir: !!js "require('node:os').homedir() + '/.dsh/video-retrieval'"
-        datasetDir: !!js "process.env.BENCH_DATA || require('node:os').homedir() + '/dev/video-retrieval/dataset'"
         backendUrl: 'http://127.0.0.1:8788'

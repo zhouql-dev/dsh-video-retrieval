@@ -193,15 +193,11 @@
 # ── video-retrieval mode rows ───────────────────────────────────────────────
 
 # The plugin row uses the PACKAGE NAME — it resolves from the profile's
-# node_modules at preset mount time.  Path placeholders are rewritten by
-# scripts/install.sh with absolute paths.
+# node_modules at preset mount time.  engineDir/serverDir/configDir/dataDir are
+# self-resolved by the plugin from its own location (import.meta.url), so only
+# the machine-specific `python` (venv) is rewritten by scripts/install.sh.
 - id: vr-plugin
   name: dsh-video-retrieval
   config:
     python: __VENV_PY__
-    engineDir: __ENGINE_DIR__
-    serverDir: __SERVER_DIR__
-    configDir: __CONFIG_DIR__
-    dataDir: __DATA_DIR__
-    datasetDir: '__DATASET_DIR__'
     backendUrl: 'http://127.0.0.1:8788'

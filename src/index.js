@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'dsh-video-retrieval'
@@ -18,19 +19,25 @@ export const inject = ['tools']
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// The plugin's own package root (dist/index.js → ../ = package root). This is
+// the only reliable location anchor: it is independent of the DSH loader's
+// `!!js` scope (which has no `require`) and of the profile/preset baseUrl.
+const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
+
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {Record<string, unknown>} config row config from agent.cordis.yml
  */
 export function apply(ctx, config = {}) {
+  const str = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
   const cfg = {
-    python: typeof config.python === 'string' ? config.python : 'python3',
-    engineDir: typeof config.engineDir === 'string' ? config.engineDir : '',
-    serverDir: typeof config.serverDir === 'string' ? config.serverDir : '',
-    configDir: typeof config.configDir === 'string' ? config.configDir : '',
-    dataDir: typeof config.dataDir === 'string' ? config.dataDir : '',
-    datasetDir: typeof config.datasetDir === 'string' ? config.datasetDir : '',
-    backendUrl: typeof config.backendUrl === 'string' ? config.backendUrl : 'http://127.0.0.1:8787',
+    python: str(config.python) || process.env.VTL_PY || 'python3',
+    engineDir: str(config.engineDir) || path.join(PKG_ROOT, 'engine'),
+    serverDir: str(config.serverDir) || path.join(PKG_ROOT, 'server'),
+    configDir: str(config.configDir) || path.join(PKG_ROOT, 'config'),
+    dataDir: str(config.dataDir) || path.join(os.homedir(), '.dsh', 'video-retrieval'),
+    datasetDir: str(config.datasetDir) || process.env.BENCH_DATA || '',
+    backendUrl: str(config.backendUrl) || 'http://127.0.0.1:8788',
   }
 
   const BACKEND_PORT = (() => {
