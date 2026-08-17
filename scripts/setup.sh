@@ -16,8 +16,11 @@ download() {
   curl -fL --retry 3 -o "$dest" "$url"
 }
 
+# Release asset filenames (must match the GitHub Release uploads exactly).
+OSNET_X0_25="osnet_x0_25_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip_jitter.pth"
+
 download yolov8s-worldv2.pt "$PREFIX/yolov8s-worldv2.pt" "$HERE/weights/../yolov8s-worldv2.pt"
-download osnet_x0_25.pth   "$PREFIX/osnet_x0_25_msmt17.pth" "$HERE/weights/osnet/osnet_x0_25_msmt17.pth"
-download ViT-B-32.pt        "$PREFIX/ViT-B-32.pt"           "$HERE/weights/clip/ViT-B-32.pt"
+download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$HERE/weights/osnet/$OSNET_X0_25"
+download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$HERE/weights/clip/ViT-B-32.pt"
 
 echo "weights ready in $HERE/weights/"
