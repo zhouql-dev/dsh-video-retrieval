@@ -13,7 +13,7 @@ DeepSeek Harness 原生视频检索插件：把监控视频时空目标定位能
 ## 安装
 
 ```bash
-git clone https://github.com/zhouql1978_1/dsh-video-retrieval.git
+git clone https://github.com/zhouql-dev/dsh-video-retrieval.git
 cd dsh-video-retrieval
 bash scripts/install.sh          # 构建 + 部署预设 + 安装包 + 下载权重
 npx @deepseek-ai/dsh web         # 重启 DSH（bundle 补丁是启动时事实）

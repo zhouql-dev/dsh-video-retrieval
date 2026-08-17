@@ -17,9 +17,9 @@ DSH_HOME_DIR="${DSH_HOME:-$HOME/.dsh}"
 PROFILE_DIR="$DSH_HOME_DIR/profiles/web"
 PATCH_FILE="$PROFILE_DIR/cordis.patch.yml"
 DSH_BIN="${DSH_BIN:-$(command -v dsh 2>/dev/null || echo npx @deepseek-ai/dsh)}"
-VENV_PY="${VTL_PY:-/Users/zhouql1978_1/dev/video-retrieval/video/bin/python}"
-BENCH_DATA="${BENCH_DATA:-/Users/zhouql1978_1/dev/video-retrieval/dataset}"
-DATA_DIR="$DSH_HOME_DIR/video-retrieval"
+VENV_PY="${VTL_PY:-python3}"
+BENCH_DATA="${BENCH_DATA:-}"
+DATA_DIR="${DATA_DIR:-$DSH_HOME_DIR/video-retrieval}"
 cd "$HERE"
 
 echo "[1/7] building host half..."
@@ -69,10 +69,11 @@ bash scripts/setup.sh || echo "       (weight download skipped — run scripts/s
 
 echo "[7/7] smoke tests..."
 mkdir -p node_modules
-ln -sfn /Users/zhouql1978_1/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai node_modules/@deepseek-ai 2>/dev/null || true
+ln -sfn "$PROFILE_DIR/node_modules/@deepseek-ai" node_modules/@deepseek-ai 2>/dev/null || true
 
-VIDEO="/Users/zhouql1978_1/dev/video-retrieval/vtl_out_q1g728/annotated_segment.mp4"
-node --input-type=module -e "
+VIDEO="${VTL_TEST_VIDEO:-}"
+if [ -n "$VIDEO" ] && [ -f "$VIDEO" ]; then
+  node --input-type=module -e "
 const m = await import('file://$HERE/dist/index.js')
 const registered = []
 m.apply({ tools: { register: (t) => registered.push(t) } }, {
@@ -96,6 +97,19 @@ function assertLossless(v, p='root') {
 assertLossless(res)
 console.log('lossless-JSON boundary: OK')
 "
+else
+  node --input-type=module -e "
+const m = await import('file://$HERE/dist/index.js')
+const registered = []
+m.apply({ tools: { register: (t) => registered.push(t) } }, {
+  python: '$VENV_PY', engineDir: '$ENGINE_DIR', serverDir: '$SERVER_DIR',
+  configDir: '$CONFIG_DIR', dataDir: '$DATA_DIR', datasetDir: '$BENCH_DATA',
+  backendUrl: 'http://127.0.0.1:8788',
+})
+console.log('registered tools (' + registered.length + '):', registered.map(t => t.name).join(', '))
+console.log('(skipped vr_preflight execution — set VTL_TEST_VIDEO to a sample mp4 to run it)')
+"
+fi
 
 node -e "
 const fs = require('fs')

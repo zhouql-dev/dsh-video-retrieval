@@ -6,7 +6,7 @@
 # GitHub Releases (or a local mirror via WEIGHTS_URL_PREFIX env).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PREFIX="${WEIGHTS_URL_PREFIX:-https://github.com/zhouql1978_1/dsh-video-retrieval/releases/latest/download}"
+PREFIX="${WEIGHTS_URL_PREFIX:-https://github.com/zhouql-dev/dsh-video-retrieval/releases/latest/download}"
 mkdir -p "$HERE/weights/osnet" "$HERE/weights/clip"
 
 download() {
