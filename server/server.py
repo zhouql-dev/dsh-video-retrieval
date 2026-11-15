@@ -198,8 +198,25 @@ def _csrf_ok(request: Request) -> None:
 
 # job registry: job_id -> {status, events:Queue, result, thread, query, video}
 JOBS: dict[str, dict] = {}
+# P2-5：内存里的 job 注册表要有上限，否则长跑必然涨到 OOM
+MAX_JOBS = int(os.environ.get("VTL_MAX_JOBS", "500"))
+JOBS_EVICTED = 0
 
 AGENT_FACTORY = Agent          # test seam
+
+
+def _evict_jobs() -> None:
+    """超过上限时按"完成时间最早"淘汰已终态的 job（在跑的不动）。"""
+    global JOBS_EVICTED
+    if len(JOBS) <= MAX_JOBS:
+        return
+    done = [(j.get("finished_at") or j.get("started_at") or 0, jid, j)
+            for jid, j in JOBS.items()
+            if j.get("status") in ("done", "failed", "cancelled")]
+    done.sort()
+    for _, jid, _j in done[: max(0, len(JOBS) - MAX_JOBS)]:
+        JOBS.pop(jid, None)
+        JOBS_EVICTED += 1
 
 
 def _jobs_log() -> str:
@@ -207,9 +224,23 @@ def _jobs_log() -> str:
     return os.path.join(JOBS_DIR, "jobs.jsonl")
 
 
+JOBS_LOG_MAX_MB = float(os.environ.get("VTL_JOBS_LOG_MAX_MB", "8"))
+
+
+def _rotate_jobs_log() -> None:
+    """P2-5：jobs.jsonl 超过阈值就轮转到 .1（保留一份），避免无限增长。"""
+    path = _jobs_log()
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > JOBS_LOG_MAX_MB * 1024 * 1024:
+            os.replace(path, path + ".1")
+    except OSError:
+        pass
+
+
 def _persist_job(job_id: str, **fields):
     """Append one job-state line (crash-safe history; replayed on boot)."""
     try:
+        _rotate_jobs_log()
         with open(_jobs_log(), "a", encoding="utf-8") as f:
             f.write(json.dumps({"job_id": job_id, "ts": time.time(), **fields},
                                ensure_ascii=False) + "\n")
@@ -317,6 +348,8 @@ def _run_job(job_id: str, req: SearchRequest):
         res.setdefault("artifacts", _list_artifacts(job_id, workdir))
         job["result"] = res
         job["status"] = "done"
+        job["finished_at"] = time.time()
+        _evict_jobs()
     except Exception as e:                      # noqa: BLE001 — report, never die
         # P0-15：对外只给异常类型 + job id，原文（常含绝对路径）只进服务日志
         try:
@@ -328,6 +361,8 @@ def _run_job(job_id: str, req: SearchRequest):
                          "error": f"{type(e).__name__} (job {job_id}, see server.log)",
                          "artifacts": []}
         job["status"] = "failed"
+        job["finished_at"] = time.time()
+        _evict_jobs()
     finally:
         _JOB_SEM.release()
         if job.get("cancelled"):
@@ -581,7 +616,8 @@ def health():
     return {"status": "ok", "jobs": {jid: j["status"] for jid, j in JOBS.items()},
             "cases_path": CASES_PATH, "config": CFG.summary(),
             "version": VERSION, "pid": os.getpid(), "nonce": NONCE,
-            "state_root": _state_root()}
+            "state_root": _state_root(), "jobs_evicted": JOBS_EVICTED,
+            "max_jobs": MAX_JOBS}
 
 
 # --------------------------------------------------------------------------- #
