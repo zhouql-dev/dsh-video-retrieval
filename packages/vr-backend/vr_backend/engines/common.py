@@ -77,7 +77,7 @@ def ensure_ultralytics_weights_dir():
         from ultralytics.utils import WEIGHTS_DIR
     except Exception:
         return
-    target = skill_root() / "weights"
+    target = models_dir()          # P1-18：项目 models/，不再指向包内 weights/
     if not target.is_dir():
         return
     try:

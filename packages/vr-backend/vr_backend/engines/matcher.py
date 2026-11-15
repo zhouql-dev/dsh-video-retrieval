@@ -42,11 +42,12 @@ except Exception:
 
 # CLIP weights: env override -> bundled skill weights -> user models dir -> legacy
 # Mac path (back-compat). clip.load(download_root=...) also downloads here if absent.
+# P1-18：默认落到项目 models/clip —— 旧默认是 skill_root()/weights/clip（已随归档消失），
+# 落空会让 clip.load() 现场下载 120 MB（测试/CI 里等于偷偷联网）。
 _CLIP_ROOT = os.environ.get("CLIP_WEIGHTS") or _first_existing(
-    [str(skill_root() / "weights" / "clip"),
-     str(models_dir() / "clip"),
-     "~/dev/video-retrieval/weights/clip"],
-    default=str(skill_root() / "weights" / "clip"))
+    [str(models_dir() / "clip"),
+     str(skill_root() / "weights" / "clip")],
+    default=str(models_dir() / "clip"))
 try:
     import clip  # noqa: F401
     # The ViT-B-32.pt on this host is the standard OpenAI JIT checkpoint. Direct
