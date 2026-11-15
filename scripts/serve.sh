@@ -5,10 +5,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
+# P0-2：唯一状态根（插件默认根，plugins 与 standalone 共用）——必须在任何 $STATE 使用之前
+STATE="${VTL_STATE_DIR:-$HOME/.dsh/video-retrieval}"
 export SKILL_SCRIPTS="$HERE/engine"
 export FUSION_CONFIG="$STATE/config"   # 运行态配置跟状态走，不写包内（P1-10 的地基）
-# P0-2：唯一状态根（插件默认根，plugins 与 standalone 共用）
-STATE="${VTL_STATE_DIR:-$HOME/.dsh/video-retrieval}"
 export FUSION_CASES="$STATE/cases.jsonl"
 export FUSION_JOBS="$STATE/jobs"
 export FUSION_UPLOADS="$STATE/uploads"
