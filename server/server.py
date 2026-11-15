@@ -53,6 +53,42 @@ app = FastAPI(title="video-retrieval agent service",
               description="云边协同监控视频检索 — agent loop + 自进化接缝")
 
 # runtime paths (env-overridable; monkeypatched by tests)
+def _load_env_file() -> str:
+    """P0-4：自己加载 .env，不再依赖 serve.sh 去 source。
+
+    查找顺序：VTL_ENV_FILE > 状态根 .env > 仓库根 .env > 插件目录 .env。
+    已存在的环境变量优先（不覆盖），所以 serve.sh / DSH 进程注入的值仍然生效。
+    返回实际加载的路径（没找到返回空串）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))          # .../server
+    pkg = os.path.dirname(here)                               # .../dsh-video-retrieval
+    repo = os.path.dirname(pkg)                               # .../video-retrieval
+    state = os.environ.get("VTL_STATE_DIR") or os.path.join(os.path.expanduser("~"), ".dsh", "video-retrieval")
+    cands = [os.environ.get("VTL_ENV_FILE") or "",
+             os.path.join(state, ".env"),
+             os.path.join(repo, ".env"),
+             os.path.join(pkg, ".env")]
+    for path in cands:
+        if not path or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip('"').strip("'")
+                    if k and k not in os.environ:      # 不覆盖已有
+                        os.environ[k] = v
+            return path
+        except Exception:                                  # noqa: BLE001
+            continue
+    return ""
+
+
+ENV_FILE_LOADED = _load_env_file()
+
 CASES_PATH = os.environ.get("FUSION_CASES") or CL.DEFAULT_CASES_PATH
 JOBS_DIR = os.environ.get("FUSION_JOBS") or os.path.join(_HERE, "jobs")
 UPLOAD_DIR = os.environ.get("FUSION_UPLOADS") or os.path.join(_HERE, "uploads")
@@ -962,6 +998,10 @@ def apply_settings(updates: dict) -> dict:
     os.makedirs(os.path.dirname(_env_file()), exist_ok=True)
     with open(_env_file(), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+    try:                                   # P0-3：密钥文件不给同机其他用户读
+        os.chmod(_env_file(), 0o600)
+    except OSError:
+        pass
     return get_settings()
 
 
@@ -1039,6 +1079,8 @@ def _trigger_engine_warmup(video: str, wdir: str):
 
 
 def main(argv=None):
+    if ENV_FILE_LOADED:
+        print(f"[env] loaded {ENV_FILE_LOADED}", flush=True)
     ap = argparse.ArgumentParser(description="video-retrieval agent service")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int,
