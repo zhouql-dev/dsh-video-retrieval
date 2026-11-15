@@ -239,17 +239,39 @@ def dedup_largest_per_window(manifest, window_s, fps):
     return sorted(buckets.values(), key=lambda c: c["frame"])
 
 
+def _seek_exact(cap, frame_idx):
+    """Exact frame addressing. OpenCV's CAP_PROP_POS_FRAMES seek snaps to the
+    nearest keyframe — on long H.264 clips the returned frame can be SECONDS
+    away from frame_idx, which misplaces every drawn bounding box. Fix: seek
+    ~0.5s EARLY, then forward-read to the exact index."""
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    early = max(0, frame_idx - max(1, int(fps * 0.5)))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, early)
+    fr = None
+    for _ in range(frame_idx - early + 1):
+        ok, fr = cap.read()
+        if not ok:
+            return None
+        if cap.get(cv2.CAP_PROP_POS_FRAMES) >= frame_idx + 1:
+            break
+    return fr
+
+
 def annotate_best_frame(cap, frame_idx, box, t_s, label, out_path):
-    """Seek cap to frame_idx, draw a green box + label + timestamp, write JPG.
-    Mirrors verify_target.py's per-cluster best-frame annotation."""
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-    ok, fr = cap.read()
-    if not ok:
+    """Seek cap to frame_idx (exactly), draw a green box + label + timestamp,
+    write JPG. Mirrors verify_target.py's per-cluster best-frame annotation."""
+    fr = _seek_exact(cap, frame_idx)
+    if fr is None:
         return False
     x1, y1, x2, y2 = [int(v) for v in box]
+    lbl = str(label)[:24]
+    try:
+        lbl.encode("ascii")                  # OpenCV Hershey has no CJK glyphs
+    except UnicodeEncodeError:
+        lbl = "target"
     cv2.rectangle(fr, (x1, y1), (x2, y2), (0, 255, 0), 4)
     cv2.rectangle(fr, (x1, y1 - 36), (x1 + 280, y1), (0, 255, 0), -1)
-    cv2.putText(fr, str(label)[:24], (x1 + 6, y1 - 10),
+    cv2.putText(fr, lbl, (x1 + 6, y1 - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
     cv2.putText(fr, f"f{frame_idx} t={t_s}s", (12, 36),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)

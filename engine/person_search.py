@@ -36,7 +36,15 @@ here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
 import matcher  # noqa: E402
 import common  # noqa: E402
-from glmv import match_image  # noqa: E402
+from glmv import match_image as _glmv_match  # noqa: E402
+try:
+    import provider as _provider  # noqa: E402  (统一 VLM 通道: deepseek/glm/qwen)
+except Exception:
+    _provider = None
+try:
+    import wevisone_local  # noqa: E402  (W-fix: 本地 referring 第二证人)
+except Exception:
+    wevisone_local = None
 
 
 def _embed_for(kind, crop, carried=None):
@@ -121,7 +129,9 @@ def main():
     if args.backend == "embed" and not embed_ok:
         print("[warn] --backend embed requested but no embedder for this kind; using vlm")
     use_embed = embed_ok and args.backend in ("auto", "embed")
-    use_vlm = (not use_embed) and bool(os.environ.get("ZHIPUAI_API_KEY") or os.environ.get("GLM_API_KEY"))
+    use_vlm = (not use_embed) and bool(
+        os.environ.get("ZHIPUAI_API_KEY") or os.environ.get("GLM_API_KEY")
+        or os.environ.get("DEEPSEEK_API_KEY") or _provider)
     backend = ("insightface" if (kind == "face" and use_embed) else
                "osnet" if (kind == "person" and use_embed and matcher.REID_OK) else
                "clip" if use_embed else
@@ -175,8 +185,16 @@ def main():
                 verdict = "exact" if sim >= thresh else ("partial" if sim >= thresh - 0.1 else "no")
                 rec = {"match": verdict, "sim": round(float(sim), 4),
                        "frame": m["frame"], "t_s": m["t_s"], "box": m["box"], "crop": m["crop"]}
-            else:  # vlm
-                r = match_image(subj["crop"], crop) or {"match": "unclear", "conf": 0.0}
+            else:  # vlm — 统一走 provider(deepseek/glm/qwen), glmv 仅作回退
+                r = None
+                if _provider is not None:
+                    try:
+                        r = _provider.match_image(subj["crop"], crop)
+                    except Exception as e:
+                        print(f"  [vlm] provider fallback ({e})")
+                if not r:
+                    r = _glmv_match(subj["crop"], crop)
+                r = r or {"match": "unclear", "conf": 0.0}
                 rec = {"match": r.get("match", "unclear"), "conf": round(float(r.get("conf", 0.0)), 3),
                        "frame": m["frame"], "t_s": m["t_s"], "box": m["box"], "crop": m["crop"],
                        "note": r.get("note", "")}
@@ -184,6 +202,49 @@ def main():
             extra = f"sim={rec.get('sim')}" if use_embed else f"conf={rec.get('conf')}"
             print(f"  [{i + 1}/{len(dedup)}] f{m['frame']} t={m['t_s']}s {rec['match']} {extra}", flush=True)
     json.dump(results, open(os.path.join(args.out, "verify.json"), "w"), ensure_ascii=False, indent=2)
+
+    # W-acc: 边缘候选语义复核——嵌入阈值不再是唯一裁判。
+    # sim ≥ thresh-0.15 的 no/partial 候选 (Top-12) 交给 WeVisOne 用参考图
+    # 描述做 referring 定位: 确认 → 升级 exact; 排除 → 保持 no。
+    # 这修复了实测中"真目标 sim 0.49 被阈值 0.55 拒掉"的漏检模式。
+    exact0 = [r for r in results if r.get("match") == "exact"]
+    near = sorted([r for r in results if r.get("match") != "exact"
+                   and isinstance(r.get("sim"), (int, float))
+                   and r["sim"] >= thresh - 0.15],
+                  key=lambda r: -r["sim"])[:12]
+    if (exact0 or near) and wevisone_local is not None:
+        try:
+            if not wevisone_local.available():
+                print("[wevisone] not available -> semantic recheck skipped", flush=True)
+            else:
+                import base64 as _b64
+                ok, buf = cv2.imencode(".jpg", subj["crop"], [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                desc = ""
+                if _provider is not None and ok:
+                    desc = str(_provider.chat([{"role": "user", "content": [
+                        {"type": "text", "text": "用一句中文描述图中目标的外观:对象类型+颜色+显著特征,只返回描述本身。"},
+                        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + _b64.b64encode(buf).decode()}}]}],
+                        max_tokens=64) or "").strip().strip('"')
+                if desc:
+                    pool = exact0 + near
+                    print(f"[wevisone] semantic recheck: {len(exact0)} exact + {len(near)} near-miss, desc={desc[:60]}", flush=True)
+                    for r in pool:
+                        crop = cv2.imread(os.path.join(crops_dir, r["crop"]))
+                        w = wevisone_local.refer(desc, crop)
+                        if w and w["match"] == "exact":
+                            upgraded = r.get("match") != "exact"
+                            r["match"] = "exact"
+                            r["note"] = ((r.get("note") or "") +
+                                         (" | wevisone 边缘复核确认" if upgraded else " | wevisone 确认")).strip()
+                            print(f"  [wevisone] {'upgrade' if upgraded else 'confirm'} f{r['frame']}", flush=True)
+                        elif w and w["match"] == "no" and r.get("match") == "exact":
+                            r["match"] = "no"
+                            r["note"] = ((r.get("note") or "") + " | wevisone 拒绝该描述").strip()
+                            print(f"  [wevisone] veto f{r['frame']}", flush=True)
+                else:
+                    print("[wevisone] no VLM to describe the reference -> skipped", flush=True)
+        except Exception as e:
+            print(f"[wevisone] semantic recheck skipped ({e})", flush=True)
 
     matches = [r for r in results if r.get("match") in ("exact", "partial")]
     intervals = common.build_intervals([r["frame"] for r in matches], fps, gap_s=2.0)
