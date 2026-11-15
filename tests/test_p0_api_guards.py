@@ -8,7 +8,7 @@ P0-11 写端点：GET 不再可用（405），无 CSRF 头 → 403，带头 → 
 import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "server"))
+sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend"))
 os.environ.setdefault("FUSION_CASES", os.path.join(tempfile.mkdtemp(), "cases.jsonl"))
 os.environ.setdefault("FUSION_JOBS", tempfile.mkdtemp())
 os.environ.setdefault("FUSION_UPLOADS", tempfile.mkdtemp())
@@ -54,6 +54,26 @@ def main():
     check("GET /video/transcode 不可用（404/405）", c.get("/video/transcode", params={"path": "/x.mp4"}).status_code in (404, 405), str(c.get("/video/transcode", params={"path": "/x.mp4"}).status_code))
     check("POST /video/transcode 无头 → 403",
           c.post("/video/transcode", params={"path": "/x.mp4"}).status_code == 403)
+
+    print("[P1-12] /shutdown 不被静态站吞掉")
+    # 2026-11-16 实测：app.mount("/") 曾写在 @app.post("/shutdown") 之前，
+    # 于是静态站先匹配所有路径，POST /shutdown 永远 405 —— 关服务只能 kill。
+    route_paths = [getattr(r, "path", None) for r in S.app.routes]
+    mount_at = next((i for i, r in enumerate(S.app.routes)
+                     if r.__class__.__name__ == "Mount"), None)
+    shut_at = route_paths.index("/shutdown") if "/shutdown" in route_paths else None
+    check("/shutdown 路由存在", shut_at is not None, str(route_paths[-5:]))
+    check("静态挂载排在 /shutdown 之后", mount_at is not None and shut_at is not None and mount_at > shut_at,
+          f"mount@{mount_at} shutdown@{shut_at}")
+    # 功能面：带头 POST 必须被路由命中（把 sleep 换掉，避免守护线程真的 os._exit）
+    _sleep = S.time.sleep
+    S.time.sleep = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("test stub"))
+    try:
+        r = c.post("/shutdown", headers={"X-Requested-With": "vr-console"})
+    finally:
+        S.time.sleep = _sleep
+    check("POST /shutdown 带头 → 200（不是 405）", r.status_code == 200, f"got {r.status_code}")
+    check("POST /shutdown 无头 → 403", c.post("/shutdown").status_code == 403)
 
     print()
     if FAILED: print(f"FAIL {len(FAILED)} 项：{FAILED}"); return 1

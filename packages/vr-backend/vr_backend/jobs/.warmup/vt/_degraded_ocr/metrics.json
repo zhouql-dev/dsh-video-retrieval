@@ -1,0 +1,11 @@
+{
+  "target": "PERSON",
+  "n_frames": 5,
+  "step": 10,
+  "n_ocr_calls": 0,
+  "n_hits": 0,
+  "n_weak_hits": 0,
+  "n_suspicious": 0,
+  "elapsed_s": 0,
+  "hits": []
+}

@@ -15,14 +15,16 @@ CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 
 EXCLUDES=(--exclude '__pycache__' --exclude 'jobs' --exclude 'uploads' --exclude 'outputs'
           --exclude 'output' --exclude 'bench_out' --exclude 'config' --exclude 'cases.jsonl'
-          --exclude 'tests/' --exclude 'test_*.py')
+          --exclude 'tests/' --exclude 'test_*.py' --exclude 'work'
+          --exclude '*.pt' --exclude 'web' --exclude 'data')
 
 if [ "$CHECK" = 1 ]; then
   if [ ! -d "$REPO/fusion" ]; then echo "SKIP check (no fusion at $REPO/fusion)"; exit 0; fi
   out=$(diff -r -q \
         -x '__pycache__' -x 'jobs' -x 'uploads' -x 'outputs' -x 'output' \
-        -x 'bench_out' -x 'config' -x 'cases.jsonl' -x 'tests' -x 'test_*.py' \
-        "$REPO/fusion" "$HERE/server" 2>&1 || true)
+        -x 'bench_out' -x 'config' -x 'cases.jsonl' -x 'tests' -x 'test_*.py' -x 'engines' \
+        -x 'work' -x '*.pt' -x 'web' -x 'data' \
+        "$REPO/fusion" "$HERE/packages/vr-backend/vr_backend" 2>&1 || true)
   if [ -n "$out" ]; then
     echo "$out" | head -20
     echo "FAIL fusion 与 server 不一致（运行 bash scripts/sync.sh 修复）"
@@ -34,7 +36,7 @@ fi
 
 if [ -n "$SKILL" ]; then
   [ -d "$SKILL/scripts" ] || { echo "canonical skill missing: $SKILL/scripts" >&2; exit 1; }
-  mkdir -p "$HERE/engine"
+  mkdir -p "$HERE/packages/vr-backend/vr_backend/engines"
   rsync -a --exclude '__pycache__' "$SKILL/scripts"/ "$HERE/engine"/
   echo "engine synced"
 else
@@ -42,8 +44,8 @@ else
 fi
 
 if [ -d "$REPO/fusion" ]; then
-  mkdir -p "$HERE/server"
-  rsync -a --delete "${EXCLUDES[@]}" "$REPO/fusion"/ "$HERE/server"/
+  mkdir -p "$HERE/packages/vr-backend/vr_backend"
+  rsync -a --delete "${EXCLUDES[@]}" "$REPO/fusion"/ "$HERE/packages/vr-backend/vr_backend"/
   echo "server synced (fusion mirror)"
 else
   echo "SKIP server/ (fusion not found at $REPO/fusion)"

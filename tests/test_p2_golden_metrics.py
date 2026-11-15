@@ -2,7 +2,7 @@
 """P2-3：metrics golden —— 手算期望值，改动算法/常数即红。"""
 import json, os, sys
 HERE=os.path.dirname(os.path.abspath(__file__)); ROOT=os.path.dirname(HERE)
-sys.path[:0]=[os.path.join(ROOT,"server"), os.path.join(ROOT,"server","bench")]
+sys.path[:0]=[os.path.join(ROOT,"packages","vr-backend","vr_backend"), os.path.join(ROOT,"packages","vr-backend","vr_backend","bench")]
 FAILED=[]
 def check(n,c,d=""):
     if c: print(f"  ok   {n}")

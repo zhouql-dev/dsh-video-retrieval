@@ -25,6 +25,8 @@ are imported nowhere — this module stays importable without torch/ultralytics.
 from __future__ import annotations
 import json
 import os
+
+import paths  # P1-16：路径单点
 import queue
 import shutil
 import subprocess
@@ -34,9 +36,7 @@ import threading
 import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_SCRIPTS = os.environ.get(
-    "SKILL_SCRIPTS",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "engine"))
+SKILL_SCRIPTS = paths.engines_dir()
 FUSION_RUN = os.path.join(_HERE, "run.py")
 
 # --------------------------------------------------------------------------- #
@@ -174,18 +174,14 @@ def _script_for(tool: str) -> str | None:
     return None
 
 
-_REPO_ROOT = os.path.dirname(_HERE)
+_REPO_ROOT = paths.repo_root()
 
 
 def _resolve_model(name: str) -> str:
     """Absolutize a model filename so engine subprocesses (cwd=workdir) never
     trigger an ultralytics re-download: repo root first, then the skill's
     bundled weights dir; falls back to the literal name unchanged."""
-    for cand in (os.path.join(_REPO_ROOT, name),
-                 os.path.join(SKILL_SCRIPTS, "..", "weights", name)):
-        if os.path.exists(cand):
-            return os.path.abspath(cand)
-    return name
+    return paths.model_path(name)
 
 
 def _build_argv(tool: str, params: dict) -> list[str]:

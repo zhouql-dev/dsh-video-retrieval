@@ -3,10 +3,11 @@
 import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 bad=[]
-for base in ("server", "engine"):
+for base in (os.path.join("packages", "vr-backend", "vr_backend"),
+             os.path.join("packages", "vr-plugin")):
     for dp,_,fns in os.walk(os.path.join(ROOT, base)):
         for f in fns:
-            if not f.endswith(".py"): continue
+            if not f.endswith((".py", ".js", ".mjs")): continue
             p=os.path.join(dp,f)
             try: txt=open(p,encoding="utf-8").read()
             except Exception: continue

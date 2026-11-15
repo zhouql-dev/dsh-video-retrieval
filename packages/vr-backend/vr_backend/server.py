@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.join(_HERE, "agent"))
 
 import case_log as CL          # noqa: E402
 import config as CFG           # noqa: E402
+import paths                   # noqa: E402  P1-16 路径单点
 from agent.loop import Agent   # noqa: E402
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
@@ -118,8 +119,8 @@ def _write_identity() -> None:
         pass
 
 CASES_PATH = os.environ.get("FUSION_CASES") or CL.DEFAULT_CASES_PATH
-JOBS_DIR = os.environ.get("FUSION_JOBS") or os.path.join(_HERE, "jobs")
-UPLOAD_DIR = os.environ.get("FUSION_UPLOADS") or os.path.join(_HERE, "uploads")
+JOBS_DIR = os.environ.get("FUSION_JOBS") or os.path.join(paths.state_root(), "jobs")
+UPLOAD_DIR = os.environ.get("FUSION_UPLOADS") or os.path.join(paths.state_root(), "uploads")
 os.makedirs(JOBS_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -1113,7 +1114,7 @@ def set_settings(req: SettingsRequest):
 
 # GUI (single page, embedded CSS/JS, no external deps) — mounted LAST so the
 # API routes above keep precedence.
-WEB_DIR = os.environ.get("FUSION_WEB") or os.path.join(_HERE, "web")
+WEB_DIR = paths.client_root()   # P1-16：控制台是插件资产，默认 <repo>/packages/vr-plugin/client
 os.makedirs(WEB_DIR, exist_ok=True)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
@@ -1128,7 +1129,6 @@ async def _no_cache_html(request, call_next):
         resp.headers["Cache-Control"] = "no-cache"
     return resp
 
-app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
 # --------------------------------------------------------------------------- #
@@ -1212,6 +1212,11 @@ def shutdown(request: Request):
 
     _t.Thread(target=_bye, daemon=True).start()
     return {"status": "shutting-down", "pid": os.getpid()}
+
+
+# 静态站挂在**所有**路由之后：放在 /shutdown 之前会让那条路由被 mount
+# 吞掉（POST /shutdown → 405，2026-11-16 实测），关服务只能 kill。
+app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 
 def main(argv=None):

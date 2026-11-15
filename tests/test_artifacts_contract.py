@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FIX = os.path.join(HERE, "fixtures", "frames3")
 
-sys.path[:0] = [os.path.join(ROOT, "server"), os.path.join(ROOT, "engine")]
+sys.path[:0] = [os.path.join(ROOT, "packages", "vr-backend", "vr_backend"), os.path.join(ROOT, "packages", "vr-backend", "vr_backend", "engines")]
 
 FAILED = []
 
@@ -286,7 +286,7 @@ def test_json_boundary(server, meta, manifest):
           got == '{"verdict":"OK","ok":true}|{"verdict":"OK","ok":true}', got or (out.stderr or "")[:200])
 
     # (b) 源码守卫：可选字段必须是条件挂载（不是先挂 undefined 再删）
-    src_path = os.path.join(ROOT, "src", "index.js")
+    src_path = os.path.join(ROOT, "packages", "vr-plugin", "src", "index.js")
     src = open(src_path, encoding="utf-8").read() if os.path.exists(src_path) else ""
     check("插件源码：recovered 条件挂载",
           "if (recovered) result.recovered = recovered" in src,

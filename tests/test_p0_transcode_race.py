@@ -7,7 +7,7 @@
 import os, shutil, subprocess, sys, tempfile, threading
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "server"))
+sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend"))
 os.environ.setdefault("FUSION_CASES", os.path.join(tempfile.mkdtemp(), "c.jsonl"))
 os.environ["FUSION_JOBS"] = tempfile.mkdtemp()
 os.environ["FUSION_UPLOADS"] = os.environ.get("FUSION_UPLOADS") or tempfile.mkdtemp()

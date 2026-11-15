@@ -2,7 +2,7 @@
 """P2-5：JOBS 上限淘汰 + jobs.jsonl 轮转。"""
 import json, os, sys, tempfile
 HERE=os.path.dirname(os.path.abspath(__file__)); ROOT=os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT,"server"))
+sys.path.insert(0, os.path.join(ROOT,"packages","vr-backend","vr_backend"))
 os.environ["FUSION_JOBS"]=tempfile.mkdtemp(); os.environ["FUSION_UPLOADS"]=tempfile.mkdtemp()
 os.environ.setdefault("FUSION_CASES", os.path.join(tempfile.mkdtemp(),"c.jsonl"))
 FAILED=[]

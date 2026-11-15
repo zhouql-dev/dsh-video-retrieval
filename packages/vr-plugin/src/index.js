@@ -11,7 +11,6 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-video-retrieval'
 export const inject = ['tools']
@@ -21,7 +20,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // The plugin's own package root (dist/index.js → ../ = package root). This is
 // the only reliable location anchor: it is independent of the DSH loader's
 // `!!js` scope (which has no `require`) and of the profile/preset baseUrl.
-const PKG_ROOT = fileURLToPath(new URL('..', import.meta.url))
+// P1-16：路径不在这里拼。src/paths.js 与 vr_backend/paths.py 逐条对齐，
+// tests/test_paths_contract.py 在默认/自定义两种环境下比对两者的输出。
+import { backendDir, enginesDir, stateRoot, benchRoot, clientRoot } from './paths.js'
 
 // Discover a Python with the CV deps (torch/ultralytics/...): VTL_PY env,
 // then common venv locations, then plain python3.
@@ -63,11 +64,11 @@ export async function apply(ctx, config = {}) {
   const str = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
   const cfg = {
     python: str(config.python) || discoverPython(),
-    engineDir: str(config.engineDir) || path.join(PKG_ROOT, 'engine'),
-    serverDir: str(config.serverDir) || path.join(PKG_ROOT, 'server'),
-    configDir: str(config.configDir) || path.join(PKG_ROOT, 'config'),
-    dataDir: str(config.dataDir) || path.join(os.homedir(), '.dsh', 'video-retrieval'),
-    datasetDir: str(config.datasetDir) || process.env.BENCH_DATA || '',
+    engineDir: str(config.engineDir) || enginesDir(),
+    serverDir: str(config.serverDir) || backendDir(),
+    configDir: str(config.configDir) || path.join(stateRoot(), 'config'),
+    dataDir: str(config.dataDir) || stateRoot(),
+    datasetDir: str(config.datasetDir) || benchRoot(),
     backendUrl: str(config.backendUrl) || 'http://127.0.0.1:8788',
   }
 
@@ -136,7 +137,7 @@ export async function apply(ctx, config = {}) {
       FUSION_CASES: path.join(cfg.dataDir, 'cases.jsonl'),
       FUSION_JOBS: path.join(cfg.dataDir, 'jobs'),
       FUSION_UPLOADS: path.join(cfg.dataDir, 'uploads'),
-      FUSION_WEB: path.join(cfg.serverDir, 'web'),
+      FUSION_WEB: str(config.webDir) || clientRoot(),
       BENCH_DATA: cfg.datasetDir,
     }
   }

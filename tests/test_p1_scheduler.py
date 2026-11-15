@@ -2,7 +2,7 @@
 """P1-4 预算调度器单测（纯计算 + 一次 cv2 probe，无模型无网络）。"""
 import os, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "server"))
+sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend"))
 FAILED=[]
 def check(n,c,d=""):
     if c: print(f"  ok   {n}")

@@ -6,7 +6,7 @@
 """
 import json, os, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-sys.path[:0] = [os.path.join(ROOT, "server"), os.path.join(ROOT, "server", "agent")]
+sys.path[:0] = [os.path.join(ROOT, "packages", "vr-backend", "vr_backend"), os.path.join(ROOT, "packages", "vr-backend", "vr_backend", "agent")]
 FAILED=[]
 def check(n,c,d=""):
     if c: print(f"  ok   {n}")

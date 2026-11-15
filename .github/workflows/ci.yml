@@ -14,9 +14,17 @@ jobs:
         with:
           node-version: 22
       - name: Build host half
-        run: node build.mjs
+        run: node packages/vr-plugin/build.mjs
       - name: Smoke test (host + client halves)
-        run: node scripts/smoke.mjs
+        run: |
+          set +e
+          node scripts/smoke.mjs
+          code=$?
+          if [ "$code" -eq 3 ]; then
+            echo "::warning::@deepseek-ai/dsh-tools peer is not resolvable here — host-half registration skipped (exit 3, explicit)."
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
 
   py-import:
     runs-on: ubuntu-latest
@@ -28,14 +36,14 @@ jobs:
       - name: Install core-lite deps (no torch)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-core.txt
+          pip install -r packages/vr-backend/requirements-core.txt
       - name: Compile
-        run: python -m compileall -q server engine
+        run: python -m compileall -q packages/vr-backend/vr_backend
       - name: Import smoke
         run: |
           python - <<'PY'
           import sys
-          sys.path[:0] = ["server", "server/agent", "server/bench"]
+          sys.path[:0] = ["packages/vr-backend/vr_backend", "packages/vr-backend/vr_backend/agent", "packages/vr-backend/vr_backend/bench"]
           import config, provider, router, scorer, signals, ground, scheduler  # noqa: F401
           import metrics  # noqa: F401
           print("imports ok")
@@ -51,7 +59,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-core.txt
+          pip install -r packages/vr-backend/requirements-core.txt
       - name: Unit tests (no model / no GPU)
         run: python tests/run_all.py
 
@@ -61,7 +69,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: No absolute home paths in source
         run: |
-          if grep -rn '/Users/' --include='*.py' server engine | grep -v '/tests/'; then
+          if grep -rn '/Users/' --include='*.py' packages | grep -v '/tests/'; then
             echo "FAIL 源码里出现写死的家目录路径"; exit 1
           fi
           echo "PASS 无硬编码家目录"

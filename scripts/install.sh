@@ -34,7 +34,7 @@ DATA_DIR="${DATA_DIR:-$DSH_HOME_DIR/video-retrieval}"
 cd "$HERE"
 
 echo "[1/6] building host half..."
-node build.mjs
+node packages/vr-plugin/build.mjs
 
 echo "[2/6] resolving package path..."
 PKG_ROOT=$(node -e "const {createRequire}=require('node:module'); const r=createRequire('$PROFILE_DIR/package.json'); console.log(r.resolve('dsh-video-retrieval/package.json').replace(/\\/package\\.json$/, ''))" 2>/dev/null || echo "")
@@ -52,7 +52,7 @@ echo "       package root: $PKG_ROOT"
 
 echo "[3/6] rewriting the venv python placeholder (into a deploy copy)..."
 STAGE="$(mktemp -d)"
-rsync -a preset/video-retrieval/ "$STAGE/video-retrieval/"
+rsync -a packages/vr-plugin/preset/video-retrieval/ "$STAGE/video-retrieval/"
 sed -i '' \
   -e "s|__VENV_PY__|$VENV_PY|g" \
   "$STAGE/video-retrieval/agent.cordis.yml"
@@ -73,7 +73,7 @@ ln -sfn "$PROFILE_DIR/node_modules/@deepseek-ai" node_modules/@deepseek-ai 2>/de
 VIDEO="${VTL_TEST_VIDEO:-}"
 if [ -n "$VIDEO" ] && [ -f "$VIDEO" ]; then
   node --input-type=module -e "
-const m = await import('file://$HERE/dist/index.js')
+const m = await import('file://$HERE/packages/vr-plugin/dist/index.js')
 const registered = []
 m.apply({ tools: { register: (t) => registered.push(t) } }, {
   python: '$VENV_PY',
@@ -97,7 +97,7 @@ console.log('lossless-JSON boundary: OK')
 "
 else
   node --input-type=module -e "
-const m = await import('file://$HERE/dist/index.js')
+const m = await import('file://$HERE/packages/vr-plugin/dist/index.js')
 const registered = []
 m.apply({ tools: { register: (t) => registered.push(t) } }, {
   python: '$VENV_PY',
@@ -112,7 +112,7 @@ node -e "
 const fs = require('fs')
 let def
 global.window = { __ModuleLoader__: { load: (d) => { def = d } } }
-require('$HERE/dist-client/index.js')
+require('$HERE/packages/vr-plugin/dist-client/index.js')
 if (!def) throw new Error('client bundle did not register with __ModuleLoader__')
 const fakeReact = { createElement: (t,p,...c)=>({t}), useSyncExternalStore: (s,g)=>g(), useEffect: (f)=>{f()}, useRef: ()=>({current:null}), useState: (i)=>[i,()=>{}] }
 const regs = []

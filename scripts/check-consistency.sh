@@ -15,7 +15,7 @@ for P in web desktop; do
   P_DIR="$HOME/.dsh/profiles/$P/node_modules/dsh-video-retrieval"
   for f in src/index.js dist/index.js dist-client/index.js; do
     if [ ! -f "$P_DIR/$f" ]; then bad "$P/$f 缺失"; continue; fi
-    a=$(h "$HERE/$f"); b=$(h "$P_DIR/$f")
+    a=$(h "$HERE/packages/vr-plugin/$f"); b=$(h "$P_DIR/$f")
     [ "$a" = "$b" ] && ok "$P/$f" || bad "$P/$f（仓库 ${a:0:8} / profile ${b:0:8}）"
   done
 done
@@ -23,7 +23,7 @@ done
 echo "== 2/4 fusion ↔ server（Python 镜像）"
 miss=0
 while IFS= read -r rel; do
-  a="$REPO/fusion/$rel"; b="$HERE/server/$rel"
+  a="$REPO/fusion/$rel"; b="$HERE/packages/vr-backend/vr_backend/$rel"
   [ -f "$b" ] || { bad "server/$rel 缺失（fusion 有）"; continue; }
   [ "$(h "$a")" = "$(h "$b")" ] && ok "fusion=server $rel" || { bad "fusion≠server $rel"; miss=1; }
 done < <(cd "$REPO/fusion" 2>/dev/null && find . -name '*.py' -not -path './bench_out/*' -not -path './__pycache__/*' -not -name 'test_*.py' | sed 's|^\./||' | sort)
@@ -31,8 +31,8 @@ done < <(cd "$REPO/fusion" 2>/dev/null && find . -name '*.py' -not -path './benc
 
 echo "== 3/4 engine ↔ server（同名文件）"
 for f in provider.py wevisone_local.py; do
-  [ -f "$HERE/engine/$f" ] && [ -f "$HERE/server/$f" ] || continue
-  [ "$(h "$HERE/engine/$f")" = "$(h "$HERE/server/$f")" ] && ok "$f" || bad "engine/$f ≠ server/$f"
+  [ -f "$HERE/packages/vr-backend/vr_backend/engines/$f" ] && [ -f "$HERE/packages/vr-backend/vr_backend/$f" ] || continue
+  [ "$(h "$HERE/packages/vr-backend/vr_backend/engines/$f")" = "$(h "$HERE/packages/vr-backend/vr_backend/$f")" ] && ok "$f" || bad "engine/$f ≠ server/$f"
 done
 
 echo "== 4/4 工作区"

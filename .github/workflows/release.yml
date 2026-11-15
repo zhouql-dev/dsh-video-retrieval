@@ -21,9 +21,9 @@ jobs:
           python-version: "3.12"
       - name: Python import smoke
         run: |
-          python -m compileall -q server engine
+          python -m compileall -q packages/vr-backend/vr_backend
       - name: Build host half
-        run: node build.mjs
+        run: node packages/vr-plugin/build.mjs
       - name: Smoke test
         run: node scripts/smoke.mjs
       - name: Python unit tests
@@ -33,7 +33,7 @@ jobs:
       - name: Package built dist
         run: |
           mkdir -p /tmp/pkg
-          tar -czf /tmp/pkg/dsh-video-retrieval-dist.tar.gz dist/ dist-client/
+          tar -czf /tmp/pkg/dsh-video-retrieval-dist.tar.gz packages/vr-plugin/dist/ packages/vr-plugin/dist-client/
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

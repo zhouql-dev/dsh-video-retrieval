@@ -3,7 +3,7 @@
 import json, os, sys, tempfile, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "server")); sys.path.insert(0, os.path.join(ROOT, "server", "agent"))
+sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend")); sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend", "agent"))
 CASES = os.path.join(tempfile.mkdtemp(), "cases.jsonl")
 os.environ["FUSION_CASES"] = CASES
 os.environ["FUSION_JOBS"] = tempfile.mkdtemp()

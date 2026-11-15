@@ -4,15 +4,15 @@
   "version": "0.3.0",
   "type": "module",
   "description": "DeepSeek Harness native mode plugin for surveillance video retrieval: natural-language query or reference image → temporal intervals + per-frame bounding-box trajectories + annotated artifacts, with a cloud-edge funnel, multi-signal voting, and a recursive self-improvement loop.",
-  "main": "dist/index.js",
+  "main": "packages/vr-plugin/dist/index.js",
   "exports": {
-    ".": "./dist/index.js",
-    "./client": "./dist-client/index.js",
+    ".": "./packages/vr-plugin/dist/index.js",
+    "./client": "./packages/vr-plugin/dist-client/index.js",
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./packages/vr-plugin/cordis.patch.yml"
     },
     "client": {
       "inject": [],
@@ -20,7 +20,7 @@
     }
   },
   "scripts": {
-    "build": "node build.mjs",
+    "build": "node packages/vr-plugin/build.mjs",
     "test": "python3 tests/run_all.py"
   },
   "repository": {

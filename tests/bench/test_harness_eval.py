@@ -6,9 +6,9 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = _HERE
-while _ROOT != os.sep and not os.path.isdir(os.path.join(_ROOT, "server")):
+while _ROOT != os.sep and not os.path.isdir(os.path.join(_ROOT, "packages", "vr-backend", "vr_backend")):
     _ROOT = os.path.dirname(_ROOT)
-_CODE = os.path.join(_ROOT, "server")
+_CODE = os.path.join(_ROOT, "packages", "vr-backend", "vr_backend")
 _FUSION = _CODE
 for _p in (_CODE, os.path.join(_CODE, "agent"), os.path.join(_CODE, "bench"), _HERE):
     if _p not in sys.path:

@@ -8,7 +8,7 @@ def check(n,c,d=""):
     else: print(f"  FAIL {n} {d}"); FAILED.append(n)
 
 def main():
-    html = open(os.path.join(ROOT, "server", "web", "index.html"), encoding="utf-8").read()
+    html = open(os.path.join(ROOT, "packages", "vr-plugin", "client", "index.html"), encoding="utf-8").read()
     print("[P1-13] 案例库字段必须 escape")
     for field in ("c.query", "c.query_type", "c.outcome", "c.id"):
         check(f"{field} 走 esc()", f"esc({field}" in html or f"esc({field})" in html)

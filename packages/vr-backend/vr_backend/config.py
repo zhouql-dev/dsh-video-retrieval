@@ -25,6 +25,8 @@ Hard guarantees (this is the safety valve for evolution):
 from __future__ import annotations
 import json
 import os
+
+import paths  # P1-16：路径单点
 import shutil
 from datetime import datetime, timezone
 
@@ -37,9 +39,8 @@ _PKG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
 
 
 def state_root() -> str:
-    """唯一可写根，和 server.py 的判定保持一致。"""
-    return (os.environ.get("VTL_STATE_DIR")
-            or os.path.join(os.path.expanduser("~"), ".dsh", "video-retrieval"))
+    """唯一可写根 —— 唯一实现在 paths.state_root()（P1-16）。"""
+    return paths.state_root()
 
 
 _DEFAULT_DIR = os.path.join(state_root(), "config")

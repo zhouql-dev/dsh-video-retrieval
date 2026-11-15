@@ -22,7 +22,22 @@ for (const file of [src, clientSrc]) {
   }
 }
 
+// Host modules that dist/index.js imports at runtime (P1-16: paths.js is the
+// single JS-side resolver, shared with vr_backend/paths.py).
+const MODULES = ['paths.js']
+for (const mod of MODULES) {
+  const modSrc = join(root, 'src', mod)
+  const check = spawnSync(process.execPath, ['--check', modSrc], { encoding: 'utf8' })
+  if (check.status !== 0) {
+    console.error(`${modSrc} failed syntax check:\n${check.stderr}`)
+    process.exit(1)
+  }
+}
+
 const code = readFileSync(src, 'utf8')
 mkdirSync(distDir, { recursive: true })
 writeFileSync(join(distDir, 'index.js'), code)
-console.log('built: dist/index.js  (client bundle syntax OK)')
+for (const mod of MODULES) {
+  writeFileSync(join(distDir, mod), readFileSync(join(root, 'src', mod), 'utf8'))
+}
+console.log(`built: dist/index.js + ${MODULES.join(', ')}  (client bundle syntax OK)`)

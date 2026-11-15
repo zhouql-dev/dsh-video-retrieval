@@ -22,8 +22,13 @@ _QUERY_TYPES = {"composite", "insufficient", "environment", "reference_quality",
                 "combo_retrieval", "novel_charset", "routine"}
 _OUTCOMES = {"resolved", "unresolved", "user_input", "escalated"}
 
-DEFAULT_CASES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                  "cases.jsonl")
+# 案例库是人工标注，必须落在唯一可写根里 —— 不再是"包内 agent/cases.jsonl"
+# （P1-15：包内任何可写路径都会在升级/重装时被覆盖）。
+DEFAULT_CASES_PATH = os.path.join(
+    os.environ.get("VTL_STATE_DIR")
+    or os.path.join(os.environ.get("DSH_HOME") or os.path.join(os.path.expanduser("~"), ".dsh"),
+                    "video-retrieval"),
+    "cases.jsonl")
 
 
 def new_case_id() -> str:

@@ -1,0 +1,12 @@
+{
+  "query": "person",
+  "noun": "object",
+  "n_frames": 5,
+  "n_crops": 0,
+  "n_verified": 0,
+  "n_matches": 0,
+  "n_intervals": 0,
+  "degraded_to_ocr": true,
+  "ocr_weak_hits": 0,
+  "intervals": []
+}

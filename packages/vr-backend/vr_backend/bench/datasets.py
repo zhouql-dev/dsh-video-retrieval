@@ -27,15 +27,14 @@ import glob
 import json
 import os
 
+import paths  # P1-16：路径单点
+
 def _default_data_root() -> str:
-    """向上找 dataset/（fusion/ 与插件 server/ 两种布局都适用）。"""
-    cur = os.path.dirname(os.path.abspath(__file__))
-    for _ in range(5):
-        cand = os.path.join(cur, "dataset")
-        if os.path.isdir(cand):
-            return cand
-        cur = os.path.dirname(cur)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "dataset")
+    """bench 数据根 —— 唯一实现在 paths.bench_root()（P1-16）。
+
+    BENCH_DATA > <repo>/dataset > <repo>/../dataset；包内不再推断相对层级。
+    """
+    return paths.bench_root()
 
 
 DATA_ROOT = os.environ.get("BENCH_DATA") or _default_data_root()

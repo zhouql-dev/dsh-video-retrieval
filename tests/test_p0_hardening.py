@@ -14,7 +14,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "server"))
+sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend"))
 os.environ.setdefault("FUSION_CASES", os.path.join(tempfile.mkdtemp(), "cases.jsonl"))
 os.environ.setdefault("FUSION_JOBS", tempfile.mkdtemp())
 os.environ.setdefault("FUSION_UPLOADS", tempfile.mkdtemp())
