@@ -749,6 +749,60 @@ def video_transcoded(key: str):
 # tracked segment clip: 目标出现→消失的跟踪片段(逐帧 bounding box 叠加)
 # --------------------------------------------------------------------------- #
 
+def _collect_boxes(jobdir: str, start: float, end: float, slack: float = 0.5):
+    """Read per-frame boxes from every boxes.json / matches.json under jobdir.
+
+    Returns sorted, de-duplicated ``[(frame, [x1,y1,x2,y2]), ...]``. Only entries
+    whose ``t_s`` falls in ``[start-slack, end+slack]`` are kept. A malformed or
+    half-written engine artifact is skipped, never fatal — the clip endpoint must
+    still return the interval it was asked for.
+    """
+    boxes = []
+    for root, _, files in os.walk(jobdir):
+        for fname in ("boxes.json", "matches.json"):
+            if fname not in files:
+                continue
+            try:
+                for m in json.load(open(os.path.join(root, fname))):
+                    fr, ts, bx = m.get("frame"), m.get("t_s"), m.get("box")
+                    if fr is None or ts is None or not bx:
+                        continue
+                    if not (start - slack <= float(ts) <= end + slack):
+                        continue
+                    # artifacts store xyxy floats; keep them as float for IoU math
+                    boxes.append((int(fr), [float(v) for v in bx[:4]]))
+            except (json.JSONDecodeError, OSError, ValueError, AttributeError, TypeError):
+                continue
+    seen, out = set(), []
+    for fr, bx in sorted(boxes):
+        key = (fr, tuple(bx))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((fr, bx))
+    return out
+
+
+def _drawbox_filters(boxes, floor_f: int):
+    """Turn xyxy boxes into ffmpeg drawbox filter strings (drawbox wants xywh).
+
+    Each box is drawn from its own frame until the frame before the next one
+    (``enable='between(n,a,b)'``). ``floor_f`` is the frame index of the input
+    seek point: ffmpeg renumbers output frames from 0, so every index is shifted.
+    Regression-sensitive: the xyxy→xywh conversion is exactly the bug fixed in
+    commit 15b5fab, and tests/test_artifacts_contract.py pins it.
+    """
+    parts = []
+    for k, (fr, bx) in enumerate(boxes):
+        nxt = boxes[k + 1][0] - 1 if k + 1 < len(boxes) else 1 << 30
+        x1, y1, x2, y2 = bx[:4]
+        x, y, w, h = int(x1), int(y1), max(0, int(x2 - x1)), max(0, int(y2 - y1))
+        parts.append(
+            f"drawbox=x={x}:y={y}:w={w}:h={h}:color=red@0.85:t=4"
+            f":enable='between(n,{max(0, fr - floor_f)},{max(0, nxt - floor_f)})'")
+    return parts
+
+
 @app.get("/video/tracked-clip")
 def tracked_clip(job: str, i: int):
     """Cut interval i of job's result into a standalone mp4 with the target's
@@ -769,23 +823,8 @@ def tracked_clip(job: str, i: int):
     if not video or not os.path.isfile(video):
         raise HTTPException(404, "job video unavailable")
 
-    # collect per-frame boxes from every engine matches.json under the job dir
     jobdir = os.path.join(JOBS_DIR, job)
-    boxes = []                       # (frame, [x,y,w,h])
-    for root, _, files in os.walk(jobdir):
-        for fname in ("boxes.json", "matches.json"):
-            if fname not in files:
-                continue
-            try:
-                for m in json.load(open(os.path.join(root, fname))):
-                    fr, ts, bx = m.get("frame"), m.get("t_s"), m.get("box")
-                    if fr is not None and ts is not None and bx \
-                            and start - 0.5 <= float(ts) <= end + 0.5:
-                        boxes.append((int(fr), [int(v) for v in bx[:4]]))
-            except (json.JSONDecodeError, OSError, ValueError):
-                continue
-    boxes = sorted(set((fr, tuple(bx)) for fr, bx in boxes))
-    boxes = [(fr, list(bx)) for fr, bx in boxes]
+    boxes = _collect_boxes(jobdir, start, end)      # [(frame, [x1,y1,x2,y2])]
     fps = 25.0
     try:
         import cv2
@@ -802,16 +841,7 @@ def tracked_clip(job: str, i: int):
     seek_start = max(0.0, start - 1.5)
     clip_len = (end - seek_start) + 1.5
     floor_f = int(seek_start * fps)
-    vf_parts = []
-    for k, (fr, bx) in enumerate(boxes):
-        nxt = boxes[k + 1][0] - 1 if k + 1 < len(boxes) else 1 << 30
-        # matches.json boxes are [x1,y1,x2,y2] (xyxy) — convert to drawbox xywh
-        x1, y1, x2, y2 = bx[:4]
-        x, y, w, h = int(x1), int(y1), max(0, int(x2 - x1)), max(0, int(y2 - y1))
-        vf_parts.append(
-            f"drawbox=x={x}:y={y}:w={w}:h={h}:color=red@0.85:t=4"
-            f":enable='between(n,{max(0, fr - floor_f)},{max(0, nxt - floor_f)})'")
-    vf = ",".join(vf_parts) or "null"
+    vf = ",".join(_drawbox_filters(boxes, floor_f)) or "null"
 
     out = os.path.join(jobdir, f"tracked_clip{i}.mp4")
     cmd = ["ffmpeg", "-y", "-ss", str(seek_start), "-i", video,
