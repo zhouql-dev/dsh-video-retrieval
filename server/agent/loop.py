@@ -115,14 +115,16 @@ def llm_env() -> tuple[str | None, str | None, str]:
 
 
 def llm_key_present() -> bool:
-    return bool(llm_env()[1] or os.environ.get("DASHSCOPE_API_KEY"))
+    return bool(llm_env()[1] or os.environ.get("DASHSCOPE_API_KEY")
+                or os.environ.get("OXALPHA_API_KEY"))
 
 
 def _vlm_key_present() -> bool:
     """Any VLM key (the image-search arbiter)."""
     return bool(os.environ.get("ZHIPUAI_API_KEY")
                 or os.environ.get("GLM_API_KEY")
-                or os.environ.get("DASHSCOPE_API_KEY"))
+                or os.environ.get("DASHSCOPE_API_KEY")
+                or os.environ.get("OXALPHA_API_KEY"))
 
 
 def _litellm_chat(messages: list[dict], tools: list[dict] = None):
@@ -250,16 +252,70 @@ class Agent:
         self._last_engine_emit: dict[str, float] = {}
 
         def _wrapped(tool, params, workdir=None):
-            # no VLM keys -> image search has NO verifier, so the engine's
-            # loose 0.55 reid threshold floods false matches (report-1:
-            # true ≈0.83, FPs 0.55-0.72). Raise it to 0.75 and say so.
+            # W-acc 改版: 不再盲目提高 reid 阈值(实测两次派发阈值不一致导致
+            # 95 区间 vs 0 区间自相矛盾)。边界判定交由 WeVisOne 边缘复核
+            # (person_search 内建: sim≥thresh-0.15 的候选语义复核后升级/否决),
+            # 无 VLM key 时保留 0.65 轻度预筛并提示人工复核。
             if (tool == "person_search"
                     and "reid_thresh" not in params
                     and not _vlm_key_present()):
-                params = {**params, "reid_thresh": 0.75}
+                params = {**params, "reid_thresh": 0.65}
                 self._emit({"type": "note",
-                            "msg": "无 VLM 核验 → 以图搜人采用 reid 0.75 "
-                                   "高阈值预筛,结果需人工复核"})
+                            "msg": "无 VLM 核验 → reid 阈值 0.65 + WeVisOne 边缘复核,结果需人工确认"})
+            # W-fix: 每次尝试工具前主动告知用户 + 预计时间(不再无声等待)
+            try:
+                est = {"preflight": "≤30 秒", "router": "≤30 秒",
+                       "rescoring": "秒级",
+                       "locate": "≤4 分钟", "fusion_run": "≤4 分钟",
+                       "person_search": "≤3 分钟", "verify_target": "≤3 分钟",
+                       "ground": "≤2 分钟", "fast_plate_scan": "≤5 分钟"}.get(tool, "数分钟")
+                if tool in ("locate", "fusion_run", "person_search", "verify_target",
+                            "fast_plate_scan") and getattr(self, "_sched", None):
+                    sb = self._sched.get("stage_budgets", {})
+                    key = ("scan" if tool in ("locate", "fusion_run", "fast_plate_scan")
+                           else "verify")
+                    if sb.get(key + "_s"):
+                        est = f"{int(sb[key + '_s'])} 秒内(预算)"
+            except Exception:
+                est = "数分钟"
+            self._emit({"type": "note", "msg": f"▶ 尝试 {tool} · 预计 {est}"})
+
+            # W2 budget scheduler: merge adaptive scan params + watchdogs.
+            # Engines keep any explicitly-passed value (CLI/explicit wins).
+            # A1 重试预算: 同一引擎工具最多 2 次——2814 实测 LLM 无限重试
+            # locate/verify 造成 7 阶段数小时churn; 超限返回明确错误,
+            # 迫使模型基于已有证据下判定。
+            counts = getattr(self, "_tool_counts", None)
+            if counts is None:
+                counts = self._tool_counts = {}
+            counts[tool] = counts.get(tool, 0) + 1
+            if counts[tool] > 2:
+                self._emit({"type": "note",
+                            "msg": f"{tool} 重试预算已用尽({counts[tool]-1} 次)——基于已有引擎输出判定"})
+                return {"tool": tool, "status": "failed", "summary": {},
+                        "outputs": {},
+                        "error": (f"重试预算用尽: {tool} 已调度 {counts[tool]-1} 次。"
+                                  "请基于已有引擎输出直接给出 final 判定。"),
+                        "cost": {}}
+            sched = getattr(self, "_sched", None)
+            if sched:
+                try:
+                    import scheduler as _sched_mod
+                    if tool in ("locate", "fusion_run", "person_search"):
+                        params.setdefault("step", sched["step"])
+                        params.setdefault("imgsz", sched["imgsz"])
+                        params.setdefault("embed_cap", sched.get("embed_cap"))
+                        params.setdefault("verify_topk", sched.get("verify_topk"))
+                        params.setdefault("timeout",
+                                          _sched_mod.engine_timeout(sched, "scan"))
+                    elif tool == "verify_target":
+                        params.setdefault("timeout",
+                                          _sched_mod.engine_timeout(sched, "verify"))
+                    elif tool == "preflight":
+                        params.setdefault("timeout",
+                                          _sched_mod.engine_timeout(sched, "ground"))
+                except Exception:
+                    pass
             if base is TB.dispatch:
 
                 def _on_line(ln):
@@ -344,13 +400,67 @@ class Agent:
 
     # -- judging -------------------------------------------------------------
 
+    def _all_no_full_scan(self, env: dict) -> bool:
+        """W-fix 证据短路: 引擎 ok + 全片覆盖 + 核验/检出区间为 0 → 目标确实
+        不在片中。此时任何进一步尝试(换工具/重扫)都是时间浪费, 直接判 no_hit。
+        覆盖判定: locate 报 coverage; person_search 按构造必扫全片; 窗口模式
+        (n_windows>0)不算全片——窗口漏检须由兜底升级处理, 不能在这里短路。"""
+        if env.get("status") != "ok":
+            return False
+        s = env.get("summary") or {}
+        m = s.get("metrics.json") or {}
+        try:
+            if int(m.get("n_intervals", -1)) != 0:
+                return False
+        except (TypeError, ValueError):
+            return False
+        cov = m.get("coverage")
+        if cov is not None:
+            try:
+                return float(cov) >= 0.99
+            except (TypeError, ValueError):
+                return False
+        if int(m.get("n_windows", -1)) == 0:
+            return True
+        return env.get("tool") == "person_search"   # 按构造扫全片
+
+    def _no_hit_shortcut(self, env, query, video, ref, route) -> Optional[dict]:
+        # 关键: 任何 envelope 存在引擎命中证据 → 禁止短路。
+        # (实测: 二次派发返回 0 区间覆盖了首次的 95 区间, 短路若只看最后一个
+        #  envelope 就会把真命中误判成 no_hit。)
+        if self._best_hit_evidence()[0]:
+            return None
+        if not self._all_no_full_scan(env):
+            return None
+        self._emit({"type": "note",
+                    "msg": "全片扫描完成且核验全部未命中 → 直接判定未找到(不再尝试)"})
+        self._record_case(query, video, ref, "insufficient", "resolved",
+                          "全片扫描完成, 候选核验全部未命中——证据充分的未命中",
+                          ["全片扫描", "核验全 no", "直接判定 no_hit"])
+        return self._finalize(
+            "no_hit", [], {},
+            coverage=self._coverage(route.get("branch", "semantic")),
+            reason="全片扫描完成, 所有候选经核验均未命中——目标未出现在视频中。"
+                   "该判定基于完整覆盖的引擎输出, 非模型猜测。",
+            suggestion="如确认目标应在视频中: 复核疑难案例并补充 GT, 演化层会"
+                       "据此校准阈值; 或换更清晰的参考图/描述后重试。")
+
     def _judge(self, env: dict) -> tuple[str, list, dict]:
         """Map an envelope to (verdict, intervals, evidence). A hit needs the
-        engine's own intervals — never synthesized."""
+        engine's own intervals — never synthesized. Evidence lives in either
+        ``metrics.json.intervals`` (run.py engines) or the sibling
+        ``intervals.json`` (locate/person_search write it separately), and the
+        count may be ``n_intervals`` — all three are accepted (W1: the
+        contract mismatch made a 1-interval locate read as insufficient)."""
         s = env.get("summary") or {}
         m = s.get("metrics.json") or {}
         intervals = m.get("intervals") or []
-        n_hits = int(m.get("n_hits", 0) or m.get("n_matches", 0) or len(intervals))
+        iv_file = s.get("intervals.json")
+        if not intervals and isinstance(iv_file, list) and iv_file:
+            intervals = [i for i in iv_file if isinstance(i, dict)
+                         and "start_s" in i]
+        n_hits = int(m.get("n_hits", 0) or m.get("n_matches", 0)
+                     or m.get("n_intervals", 0) or len(intervals))
         hits = s.get("hits") or []
         if env.get("status") == "ok" and (n_hits > 0 or intervals or hits):
             if not intervals and hits:
@@ -408,7 +518,7 @@ class Agent:
     # -- main entry ----------------------------------------------------------
 
     def run(self, query: str, video: str, ref: str = None,
-            mode: str = "auto") -> dict:
+            mode: str = "auto", profile: str = None) -> dict:
         """Run one retrieval task. Returns the AGENT-INSTRUCTIONS §7 shape:
         {verdict: hit|no_hit|inconclusive|user_input, intervals, evidence,
         case_id, tried, coverage, reason, suggestion, log}."""
@@ -424,6 +534,21 @@ class Agent:
             query = "参考图中的人物(以图搜人)"
         self._emit({"type": "start", "query": query, "video": video,
                     "ref": ref, "mode": mode})
+
+        # W2: compute the duration-budget plan FIRST (before preflight) so even
+        # the first stage gets a budget bar and watchdog.
+        self._sched = None
+        try:
+            import scheduler as _sched_mod
+            self._sched = _sched_mod.plan(video, profile or os.environ.get("VTL_PROFILE"))
+            self._job_t0 = time.time()
+            s = self._sched
+            self._emit({"type": "note",
+                        "msg": f"调度: {s['mode']} 档 · 视频 {s['duration_s']}s · "
+                               f"预算 {s['budget_s']}s · step={s['step']} · "
+                               f"imgsz={s['imgsz']} · embed_cap={s['embed_cap']}"})
+        except Exception as _se:
+            self._emit({"type": "note", "msg": f"调度器不可用({_se})→ 引擎默认参数"})
 
         # ① preflight — never skipped (护栏 #1).
         pre = self._dispatch("preflight",
@@ -453,10 +578,26 @@ class Agent:
                 return self._playbook(query, video, ref, route)
             return self._llm_loop(query, video, ref, route, pre, None)
 
-        # ② router — the plan anchor.
+        # ② router — the plan anchor. (scheduler already computed pre-preflight)
         rt_env = self._dispatch("router", {"query": query})
         route = rt_env.get("summary") or {}
         branch = route.get("branch", "semantic")
+
+        # W1 预算红线: 车牌/证件号查询不再启动任何扫描,直接给引导.
+        if branch == "unsupported":
+            msg = route.get("msg") or "该查询类型已不支持,请改用外观描述。"
+            self._emit({"type": "unsupported", "msg": msg,
+                        "target": route.get("target"),
+                        "kind": route.get("kind", "plate")})
+            self._record_case(query, video, ref, "insufficient", "unresolved",
+                              f"unsupported 查询类型(target={route.get('target')})",
+                              ["router 判定不支持", "如实报告并给替代建议"])
+            return self._finalize(
+                "user_input", [], {},
+                coverage="未扫描(该查询类型已移除)",
+                reason=msg,
+                suggestion="改用外观描述,如「白色皮卡车」「黑色轿车」;"
+                           "命中片段内可人工读取车牌。")
 
         if mode == "deterministic" or not self._llm_available():
             if not self._llm_available():
@@ -472,18 +613,16 @@ class Agent:
         branch = route.get("branch", "semantic")
         plan = ["preflight 检查视频", "router 分类",
                 "选引擎跑定式", "不足 → rescoring 重判 → 换阈值 → 换引擎 → 如实报告"]
-        if branch == "precise_text":
-            if not route.get("target"):
-                self._record_case(query, video, ref, "insufficient", "unresolved",
-                                  "无法从查询提取车牌/证件号", plan)
-                return self._finalize(
-                    "no_hit", [], {},
-                    coverage="未扫描(无检索标识)",
-                    reason="未能从查询中提取车牌/证件号等精确标识串。",
-                    suggestion="补充车牌号(如 京Q1G728)或改述为语义描述。")
-            env = self._dispatch("fast_plate_scan", {
-                "video": video, "target": route["target"],
-                "out": os.path.join(self.workdir, "plate")})
+        if branch in ("unsupported", "precise_text"):
+            # W1: precise_text was cut; legacy routes degrade honestly here.
+            msg = route.get("msg") or "全片车牌/证件号检索已按时长预算移除,请改用外观描述。"
+            self._emit({"type": "unsupported", "msg": msg,
+                        "target": route.get("target")})
+            return self._finalize(
+                "user_input", [], {},
+                coverage="未扫描(该查询类型已移除)",
+                reason=msg,
+                suggestion="改用外观描述,如「白色皮卡车」「黑色轿车」。")
         elif ref:
             env = self._dispatch("fusion_run", {
                 "video": video, "query": query, "ref": ref,
@@ -508,7 +647,24 @@ class Agent:
         for a in self._attempts:
             a["note"] = a["note"] or "确定性剧本执行"
 
+        # W-fix 证据短路: 全片扫完且全 no → 直接判定, 不再 rescoring/换引擎.
+        sc = self._no_hit_shortcut(env, query, video, ref, route)
+        if sc:
+            return sc
+
         # ③ insufficient → rescoring (微秒级) → permissive → 换引擎.
+        _sc0 = getattr(self, "_sched", None)
+        if _sc0 and time.time() - getattr(self, "_job_t0", 0) > _sc0["budget_s"]:
+            iv, ev = self._best_hit_evidence()
+            if iv:
+                return self._finalize("hit", iv, ev, coverage="partial(预算内已扫范围)")
+            self._emit({"type": "note",
+                        "msg": f"总预算 {int(_sc0['budget_s'])}s 已用尽 → 诚实结论"})
+            return self._finalize(
+                "inconclusive", [], {},
+                coverage="partial(预算内已扫范围)",
+                reason=f"预算 {int(_sc0['budget_s'])}s 内未找到可靠命中; 未扫完部分不作武断结论。",
+                suggestion="标准档重跑或细化查询。")
         if env.get("status") == "ok" and (env.get("outputs") or {}).get("scored.json"):
             env = self._dispatch("rescoring", {
                 "candidates": env["outputs"]["scored.json"], "agree": 2})
@@ -584,6 +740,22 @@ class Agent:
         ]
         for step in range(1, self.max_steps + 1):
             self._steps.append(step)
+            # A1 任务级总预算: 到点即出诚实结论, 不让用户无限等待
+            sched = getattr(self, "_sched", None)
+            if sched and time.time() - getattr(self, "_job_t0", 0) > sched["budget_s"]:
+                self._emit({"type": "note",
+                            "msg": f"总预算 {int(sched['budget_s'])}s 已用尽 → 基于已扫范围给出结论"})
+                iv, ev = self._best_hit_evidence()
+                if iv:
+                    return self._finalize("hit", iv, ev,
+                                          coverage="partial(预算内已扫范围)",
+                                          note="预算内发现命中区间, 供人工复核")
+                return self._finalize(
+                    "inconclusive", [], {},
+                    coverage="partial(预算内已扫范围)",
+                    reason=f"预算 {int(sched['budget_s'])}s 内未找到可靠命中; "
+                           "未扫完的部分可能含目标, 不作武断结论。",
+                    suggestion="用标准档重跑, 或缩小视频范围/细化查询描述。")
             reply = self._call_llm(messages, tools=self._tool_schemas())
             if reply is None:
                 reason = LITELM_LAST_ERROR or "无响应"
@@ -632,6 +804,9 @@ class Agent:
                     if ref:
                         params.setdefault("ref", ref)
                     env = self._dispatch(name, params)
+                    sc = self._no_hit_shortcut(env, query, video, ref, route)
+                    if sc:
+                        return sc
                     messages.append({"role": "tool",
                                      "tool_call_id": tc.get("id", f"c{step}"),
                                      "content": json.dumps(env, ensure_ascii=False)[:6000]})
@@ -646,6 +821,9 @@ class Agent:
                 if ref:
                     params.setdefault("ref", ref)
                 env = self._dispatch(tool, params)
+                sc = self._no_hit_shortcut(env, query, video, ref, route)
+                if sc:
+                    return sc
                 asst = {"role": "assistant", "content": text}
                 if reply.get("reasoning_content"):
                     asst["reasoning_content"] = reply["reasoning_content"]
@@ -698,6 +876,20 @@ class Agent:
             return self._finalize("user_input", [], {},
                                   coverage="", reason=note or "需要用户补充信息",
                                   suggestion="请提供更清晰的参考图或补充标识性描述。")
+        # 对称护栏: LLM 判 no_hit/insufficient, 但引擎有真实命中时间段时,
+        # 以引擎证据为准改判 hit——上下文截断曾让模型漏看 95 个区间(实测).
+        intervals, evidence = self._best_hit_evidence()
+        if intervals:
+            self._emit({"type": "note",
+                        "msg": f"模型判 {verdict or 'no_hit'}, 但引擎存在 {len(intervals)} "
+                               f"个命中区间 → 以引擎证据改判 hit"})
+            self._record_case(query, video, ref, "routine", "resolved",
+                              "模型漏判, 引擎证据改判 hit(待人工复核确认)", [])
+            return self._finalize("hit", intervals, evidence,
+                                  coverage=self._coverage(route.get("branch", "semantic")),
+                                  note="模型倾向未命中, 但引擎存在命中时间段, 按证据护栏改判"
+                                       "(断言必须基于证据, 漏报同样基于证据)。",
+                                  suggestion="命中区间请人工复核确认。")
         self._record_case(query, video, ref, "insufficient",
                           "resolved" if verdict == "no_hit" else "unresolved",
                           note or "LLM 判定未命中(如实报告)", [])

@@ -177,6 +177,43 @@ def vlm_arbiter(ref_bgr, crop_bgr, max_tokens: int = 2048) -> dict:
             "evidence": f"VLM {label} conf={conf:.2f} | {str(r.get('note', ''))[:80]}"}
 
 
+# --------------------------------------------------------------------------- #
+# 4. Local WeVisOne referring ground (the fourth witness, no cloud, no key)
+# --------------------------------------------------------------------------- #
+
+def wevisone_ground(query: str, crop_bgr) -> dict:
+    """Local referring check via WeVisOne-VL (wevisone_local.refer).
+
+    Asks the local model to *locate* the target described by ``query`` inside
+    the crop. Its documented reliable-rejection (``None`` when absent) makes
+    "no" a real vote rather than noise — unlike the cloud VLM arbiter whose
+    field failure mode was answering yes to everything.
+
+    raw.match: exact (box emitted) / no (explicit None) / unclear (no box, no
+    None — treat as abstention) / unavailable (model off or failed).
+    Score maps exact→1.0, no→0.0, unclear→0.3 (same ladder as vlm_arbiter).
+    """
+    try:
+        import wevisone_local
+    except Exception:                                # noqa: BLE001 — not installed
+        return {"score": 0.0, "raw": {"match": "unavailable"},
+                "evidence": "wevisone_local not importable — abstains"}
+    r = wevisone_local.refer(query, crop_bgr)
+    if r is None:
+        return {"score": 0.0, "raw": {"match": "unavailable"},
+                "evidence": f"local model unavailable ({wevisone_local.status().get('reason','')}) — abstains"}
+    m = r["match"]
+    score = {"exact": 1.0, "no": 0.0, "unclear": 0.3}.get(m, 0.3)
+    ev = f"wevisone {m} ({r['latency_s']:.2f}s)"
+    if r.get("boxes"):
+        b = r["boxes"][0]
+        ev += f" box=[{b[0]:.2f},{b[1]:.2f},{b[2]:.2f},{b[3]:.2f}]"
+    return {"score": round(score, 3),
+            "raw": {"match": m, "boxes": r.get("boxes", []),
+                    "latency_s": r.get("latency_s", 0.0)},
+            "evidence": ev}
+
+
 if __name__ == "__main__":
     # Synthetic demo: two same-hue swatches vs a different hue, with no VLM key.
     import numpy as np

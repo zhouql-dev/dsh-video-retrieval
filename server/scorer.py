@@ -33,6 +33,9 @@ DEFAULT_THRESHOLDS = {
     "temporal_bellness": 0.40, # min sustained-elevation fraction (spike ≈ 0)
     "temporal_span_s": 0.5,    # minimum above-floor span (rejects 1-frame spikes)
     "vlm_match": ("exact", "partial"),  # VLM verdicts that count as a fire
+    "wevisone_match": ("exact",),       # local referring: only a located box fires;
+                                        # an explicit "no" is an eligible NO vote
+                                        # (blocks), unclear/unavailable abstain
     "reid_sim": 0.55,          # embedding cosine gate (PRW/image-search signal)
     # generic fallback for any ad-hoc signal that only exposes ``score``
     "score_floor": 0.5,
@@ -91,11 +94,19 @@ def _rule_generic(res, thr):
     return float(res.get("score", 0.0)) >= thr["score_floor"], False
 
 
+def _rule_wevisone(res, thr):
+    m = str(res.get("raw", {}).get("match", "unavailable"))
+    if m in ("unavailable", "unclear", "skipped"):
+        return False, True                      # abstain: model off / no decision
+    return m in thr.get("wevisone_match", ("exact",)), False
+
+
 SIGNAL_RULES = {
     "hue": _rule_hue,
     "temporal": _rule_temporal,
     "vlm": _rule_vlm,
     "reid": _rule_reid,
+    "wevisone": _rule_wevisone,
 }
 
 

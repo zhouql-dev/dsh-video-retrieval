@@ -3,19 +3,23 @@
 
 This is the Phase-1 evolution of ``mvp/glmv.py``: the same four public
 functions with identical signatures and return contracts, but the single
-OpenAI-compatible transport now routes between two providers via
-``VLM_PROVIDER=glm|qwen``:
+OpenAI-compatible transport now routes between three providers via
+``VLM_PROVIDER=glm|qwen|oxalpha``:
 
   * **glm** — ZhipuAI bigmodel.cn (``glm-4v-flash`` / ``glm-5.1``). This is the
     proven edge baseline from ``mvp/glmv.py``; behavior is preserved byte-for-byte.
   * **qwen** — Alibaba DashScope OpenAI-compatible endpoint (``qwen-vl-max`` /
     ``qwen-plus``). Unlocks the Q2/Q3 channel (native video, OCR, temporal
     grounding).
+  * **oxalpha** — OpenRouter OpenAI-compatible endpoint (``stealth/ox-alpha``).
+    TEMPORARY trial channel: on any failure (key missing/expired/quota'd,
+    timeout) the call transparently falls back to glm/qwen below, so removing
+    the key or flipping VLM_PROVIDER restores the pre-ox behavior exactly.
 
 Routing + degradation contract (unchanged from the field-tested design):
   * The *active* provider (``VLM_PROVIDER``, default ``glm``) is tried first.
   * On any failure — no key, non-200, quota (429), timeout, JSON/regex miss —
-    the call transparently falls back to the *other* provider if it has a key.
+    the call transparently falls back to the next provider in ``_order()``.
   * If neither provider can answer, returns ``None`` (or ``{}``-shaped dict for
     the JSON functions), so the local-only baseline never hard-depends on the
     cloud. This is the env-gated silent degradation glmv.py already used; we
@@ -50,6 +54,14 @@ QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completi
 QWEN_VISION_MODEL = os.environ.get("QWEN_VL_MODEL", "qwen-vl-max")
 QWEN_TEXT_MODEL = os.environ.get("QWEN_TEXT_MODEL", "qwen-plus")
 
+# ox-alpha (OpenRouter, OpenAI-compatible) -------------------------------------
+# Temporary trial VLM. Key lives in OXALPHA_API_KEY; absence of the key simply
+# disables this provider and every call falls through to glm/qwen.
+OX_BASE_URL = os.environ.get(
+    "OX_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
+OX_VISION_MODEL = os.environ.get("OX_VISION_MODEL", "stealth/ox-alpha")
+OX_TEXT_MODEL = os.environ.get("OX_TEXT_MODEL", "stealth/ox-alpha")
+
 
 def _glm_key() -> Optional[str]:
     return os.environ.get("ZHIPUAI_API_KEY") or os.environ.get("GLM_API_KEY")
@@ -57,6 +69,10 @@ def _glm_key() -> Optional[str]:
 
 def _qwen_key() -> Optional[str]:
     return os.environ.get("DASHSCOPE_API_KEY")
+
+
+def _ox_key() -> Optional[str]:
+    return os.environ.get("OXALPHA_API_KEY")
 
 
 # Active provider selection. ``auto`` = GLM if its key is set, else Qwen.
@@ -102,10 +118,19 @@ def has_qwen() -> bool:
     return bool(_qwen_key())
 
 
+def has_glm() -> bool:
+    """W4b: ZHIPUAI key — glm-5.3-flash(x) 视频粗筛通道 (与 qwen 互为备份)."""
+    return bool(os.environ.get("ZHIPUAI_API_KEY"))
+
+
+def has_oxalpha() -> bool:
+    return bool(_ox_key())
+
+
 def provider_status() -> dict:
     """Snapshot of provider availability — cheap, no network."""
     return {"active": VLM_PROVIDER, "glm": has_glm(), "qwen": has_qwen(),
-            "last": _LAST_PROVIDER}
+            "oxalpha": has_oxalpha(), "last": _LAST_PROVIDER}
 
 
 def last_provider() -> Optional[str]:
@@ -123,6 +148,9 @@ def _cfg(name: str):
     if name == "qwen":
         k = _qwen_key()
         return (k, QWEN_BASE_URL, QWEN_VISION_MODEL, QWEN_TEXT_MODEL) if k else None
+    if name == "oxalpha":
+        k = _ox_key()
+        return (k, OX_BASE_URL, OX_VISION_MODEL, OX_TEXT_MODEL) if k else None
     # glm (default + fallback spelling tolerant)
     k = _glm_key()
     return (k, GLM_BASE_URL, GLM_VISION_MODEL, GLM_TEXT_MODEL) if k else None
@@ -148,13 +176,11 @@ def _post(base_url: str, key: str, model: str, messages, max_tokens: int,
 
 
 def _order() -> list[str]:
-    """Provider try-order: active first, then the other (if available)."""
-    act = VLM_PROVIDER if VLM_PROVIDER in ("glm", "qwen") else "glm"
-    other = "qwen" if act == "glm" else "glm"
-    order = [act]
-    if other not in order:
-        order.append(other)
-    return order
+    """Provider try-order: active first, then the others (if available)."""
+    act = VLM_PROVIDER if VLM_PROVIDER in ("glm", "qwen", "oxalpha") else "glm"
+    rest = {"glm", "qwen", "oxalpha"} - {act}
+    # Stable fallback order after the active provider: glm -> qwen -> oxalpha.
+    return [act] + sorted(rest, key=("glm", "qwen", "oxalpha").index)
 
 
 def chat(messages, max_tokens: int = 2048, timeout: int = 60,
@@ -190,12 +216,17 @@ def chat(messages, max_tokens: int = 2048, timeout: int = 60,
 
 def _model_known(model: str, provider: str) -> bool:
     """True if ``model`` looks like a model id native to ``provider`` (avoids
-    sending a GLM name like 'glm-5.1' to DashScope)."""
-    g = model.lower().startswith(("glm", "charglm", "cogvlm"))
-    q = model.lower().startswith(("qwen", "qwq"))
+    sending a GLM name like 'glm-5.1' to DashScope, or 'stealth/ox-alpha' to
+    bigmodel.cn)."""
+    m = model.lower()
+    g = m.startswith(("glm", "charglm", "cogvlm"))
+    q = m.startswith(("qwen", "qwq"))
+    o = m.startswith("stealth/") or "ox-alpha" in m or m.startswith(("openrouter/",))
     if provider == "glm":
-        return g or not q
-    return q or not g
+        return g or not (q or o)
+    if provider == "qwen":
+        return q or not (g or o)
+    return o or not (g or q)
 
 
 def qwen_chat(messages, max_tokens: int = 4096, timeout: int = 120,
@@ -215,6 +246,22 @@ def qwen_chat(messages, max_tokens: int = 4096, timeout: int = 120,
     return out
 
 
+def ox_chat(messages, max_tokens: int = 4096, timeout: int = 120,
+            model: Optional[str] = None, temperature: float = 0.1) -> Optional[str]:
+    """Force the oxalpha (OpenRouter) provider — no glm/qwen fallback. Used by
+    ``ground_candidates``' ox path. Returns content or None (env-gated: no
+    OXALPHA_API_KEY -> None; caller degrades to a full scan)."""
+    global _LAST_PROVIDER
+    cfg = _cfg("oxalpha")
+    if not cfg:
+        return None
+    key, base, vis_m, _ = cfg
+    out = _post(base, key, model or vis_m, messages, max_tokens, timeout, temperature)
+    if out:
+        _LAST_PROVIDER = "oxalpha"
+    return out
+
+
 def _substitute_model(model: str, provider: str) -> str:
     """Map a model requested for the *other* family onto this provider's
     equivalent family (text->text, vision->vision). Keeps cross-provider
@@ -223,13 +270,16 @@ def _substitute_model(model: str, provider: str) -> str:
     textish = any(t in model.lower() for t in ("5.1", "plus", "max-text", "turbo"))
     if provider == "qwen":
         return QWEN_TEXT_MODEL if textish else QWEN_VISION_MODEL
+    if provider == "oxalpha":
+        # One model serves both families on the trial channel.
+        return OX_TEXT_MODEL
     return GLM_TEXT_MODEL if textish else GLM_VISION_MODEL
 
 
 # Backwards-compat alias so existing call sites (``from provider import _key``)
 # and glmv.py imports both work inside the fusion package.
 def _key() -> Optional[str]:
-    return _glm_key() or _qwen_key()
+    return _glm_key() or _qwen_key() or _ox_key()
 
 
 # --------------------------------------------------------------------------- #
@@ -289,7 +339,10 @@ def verify_target(query: str, crop_bgr, max_tokens: int = 2048) -> Optional[dict
     tpl = _tpl("verify",
                "这是监控画面中一个目标物体的裁剪图。判断它是否与以下目标描述相符：\"{query}\"。\n"
                "若目标是车辆/人员等带有可读标识（如车牌、衣着颜色）的物体，请尽量准确读出标识文字。\n"
-               "只返回JSON：{\"match\": \"exact|partial|no|unclear\", \"read\": \"读到的标识或空\", \"note\": \"简短说明\"}")
+               # JSON 示例的花括号必须双写，否则 str.format 会因 {match…} 抛
+               # KeyError、_fmt 静默回退、整个模板（含 {query}）原样发出。
+               "只返回JSON：{{\"match\": \"exact|partial|no|unclear\", "
+               "\"read\": \"读到的标识或空\", \"note\": \"简短说明\"}}")
     prompt = _fmt(tpl, query=query)
     out = chat([{"role": "user", "content": [
         {"type": "text", "text": prompt},

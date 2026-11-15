@@ -22,10 +22,12 @@ unit-testable without keys.
 
 Contract
 --------
-``classify_query(q) -> {"branch": "semantic"|"precise_text", "target": str|None,
-                        "query": str}``
-  * ``target``: the normalized identifier string for precise_text (e.g.
-    ``Q1G728``), else None. Forwarded to ``fast_plate_scan`` as ``--target``.
+``classify_query(q) -> {"branch": "semantic"|"unsupported", "target": str|None,
+                        "query": str, "kind": str?, "msg": str?}``
+  * W1 预算红线：precise_text 分支已整体移除（实测 15 分钟视频全片 OCR 双遍
+    >130min，超预算 8 倍以上）。车牌/证件号查询不再启动任何扫描，返回
+    ``unsupported`` + 引导文案，由调用方（agent loop / GUI）直接给出建议。
+  * ``target``: 命中的标识串（如 ``Q1G728``），仅用于引导展示。
 """
 from __future__ import annotations
 import re
@@ -55,29 +57,28 @@ def extract_plate(query: str) -> str | None:
     return m.group(1) or m.group(2) if m else None
 
 
-def classify_query(query: str) -> dict:
-    """Route a free-form query to the semantic or precise_text branch.
+_UNSUPPORTED_MSG = ("全片车牌/证件号检索已按时长预算移除(实测超出红线 8 倍以上)。"
+                    "请改用外观描述,例如「白色皮卡车」「黑色轿车」;"
+                    "命中片段内可人工读取车牌。")
 
-    Returns ``{"branch", "target", "query"}``. ``branch == "precise_text"``
-    iff a plate / ID number (or a strong precise keyword) is present; the
-    extracted identifier is returned in ``target`` for the OCR scan."""
+
+def classify_query(query: str) -> dict:
+    """Route a free-form query. Plate / ID-number / precise-keyword queries
+    return ``branch="unsupported"`` with guidance text (W1: the full-video
+    OCR branch was cut for blowing the duration budget 8x)."""
     if not query or not query.strip():
         return {"branch": "semantic", "target": None, "query": query or ""}
 
     plate = extract_plate(query)
-    if plate:
-        return {"branch": "precise_text", "target": plate, "query": query}
-
-    if _IDCARD_RE.search(query):
-        m = _IDCARD_RE.search(query)
-        return {"branch": "precise_text", "target": m.group(0).upper(),
-                "query": query}
-
+    idm = _IDCARD_RE.search(query)
     ql = query.lower()
-    if any(k in ql for k in ("plate", "license")) or any(k in query for k in _PRECISE_KW):
-        # precise keyword present but no extractable token — still precise_text,
-        # target None lets run.py decide whether an OCR scan is meaningful.
-        return {"branch": "precise_text", "target": None, "query": query}
+    kw = any(k in ql for k in ("plate", "license")) or any(k in query for k in _PRECISE_KW)
+
+    if plate or idm or kw:
+        target = plate or (idm.group(0).upper() if idm else None)
+        return {"branch": "unsupported", "target": target, "query": query,
+                "kind": "id" if (idm and not plate) else "plate",
+                "msg": _UNSUPPORTED_MSG}
 
     return {"branch": "semantic", "target": None, "query": query}
 
@@ -90,5 +91,6 @@ if __name__ == "__main__":
         "white plate 京P3LD03 sedan",
         "身份证 110101199003071234 的男子",
         "a red bicycle parked near the gate",
+        "白色轿车",
     ]):
         print(f"{q!r:55} -> {json.dumps(classify_query(q), ensure_ascii=False)}")
