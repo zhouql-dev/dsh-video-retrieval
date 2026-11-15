@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "node packages/vr-plugin/build.mjs",
-    "test": "python3 tests/run_all.py"
+    "test": "python3 tests/run_all.py",
+    "prepare": "node packages/vr-plugin/build.mjs"
   },
   "repository": {
     "type": "git",

@@ -1,5 +1,9 @@
 # 方案：用 DeepSeek V4-Flash-Vision 替换 qwen/glm（dsh-video-retrieval）
 
+> **2026-11-16 注**：本文写于目录重构之前，文中 `server/…`、`engine/…` 与行号都是**当时**的位置，
+> 现在代码在 `packages/vr-backend/vr_backend/`（引擎在 `…/engines/`），行号已不可靠 —— 当设计
+> 记录读，别当导航用。当前实现见 `packages/vr-backend/vr_backend/provider.py`。
+
 > 目标：把检索管线里的 VLM 调用从 「GLM(glm-4v-flash) + Qwen(qwen-vl-max)」迁移到
 > **DeepSeek V4-Flash-Vision-Exp**，在同等甚至更高精度下大幅降本，并按阶段 A/B 验证性能是否有提升。
 > 现状：agent 循环 LLM 已经用 DeepSeek（`LLM_BASE_URL`/`LLM_MODEL`），但 **视觉管线**（`server/provider.py`）

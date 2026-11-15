@@ -5,13 +5,21 @@ P0-12 has_glm 同名覆盖：只设 GLM_API_KEY 时也必须为 True
 P0-10 base_url 白名单：非白名单主机拒绝；对话工具不允许改密钥/url
 P0-11 写端点：GET 不再可用（405），无 CSRF 头 → 403，带头 → 200（stub）
 """
-import os, sys, tempfile
+import os, sys, tempfile, time
+
+_START = time.time()
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "packages", "vr-backend", "vr_backend"))
 os.environ.setdefault("FUSION_CASES", os.path.join(tempfile.mkdtemp(), "cases.jsonl"))
 os.environ.setdefault("FUSION_JOBS", tempfile.mkdtemp())
 os.environ.setdefault("FUSION_UPLOADS", tempfile.mkdtemp())
+# P0-4：/settings 会落盘。这里必须把落盘目标重定向到临时文件，否则用例会往**真实的**
+# <repo>/.env 里写（2026-11-16 实测：跑完多出一个只含 LLM_BASE_URL 的 .env，
+# 而 _load_env_file 读它优先于 serve.sh 注入的 env，等于把密钥静默抹掉）。
+_TMP_ENV = os.path.join(tempfile.mkdtemp(), "settings.env")
+os.environ["FUSION_ENV"] = _TMP_ENV
+REAL_ENV = os.path.join(ROOT, ".env")
 
 FAILED = []
 def check(name, cond, detail=""):
@@ -74,6 +82,11 @@ def main():
         S.time.sleep = _sleep
     check("POST /shutdown 带头 → 200（不是 405）", r.status_code == 200, f"got {r.status_code}")
     check("POST /shutdown 无头 → 403", c.post("/shutdown").status_code == 403)
+
+    print("[卫生] 用例没有写真实 .env")
+    leaked = os.path.exists(REAL_ENV) and os.path.getmtime(REAL_ENV) >= _START
+    check("未新建/未改动仓库根 .env", not leaked, REAL_ENV)
+    check("/settings 落到了临时文件", os.path.exists(_TMP_ENV), _TMP_ENV)
 
     print()
     if FAILED: print(f"FAIL {len(FAILED)} 项：{FAILED}"); return 1

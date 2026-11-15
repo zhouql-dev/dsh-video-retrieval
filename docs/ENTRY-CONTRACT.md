@@ -19,7 +19,7 @@
 1. **一份代码**：只有 `packages/vr-backend/vr_backend/`（Python）与 `packages/vr-plugin/`（JS）。历史上的 `fusion/` 已归档到 `archive/fusion-legacy/`，`scripts/sync.sh --check` 现在校验"同名模块只出现一次"，`fusion/` 里不再有 `.py`。
 2. **一份状态**：唯一可写根由 `vr_backend/paths.py` 的 `state_root()` 决定（`VTL_STATE_DIR` > `$DSH_HOME/video-retrieval`），默认 `~/.dsh/video-retrieval`；包内没有任何可写目录（`jobs/`、`uploads/`、`cases.jsonl`、`config/` 全在状态根）。JS 侧 `src/paths.js` 逐条镜像，`tests/test_paths_contract.py` 在三种环境下比对两端的输出。
 3. **路径单点**：`python -m vr_backend.paths --print` 与 `node packages/vr-plugin/src/paths.js --print` 输出必须一致（repo/state/weights/bench/engines/client 六个键）。
-4. **一个进程**：`server/main()` 启动时用 `flock` 锁 `<state>/server.pid`，第二个实例直接退出（exit 2），不会双写。
+4. **一个进程**：`vr_backend/server.py::main()` 启动时用 `flock` 锁 `<state>/server.pid`，第二个实例直接退出（exit 2），不会双写。
 5. **身份握手**：`GET /health` 返回 `{version, pid, nonce, state_root, cases_path}`；同时把同样内容写到 `<state>/server.identity.json`。插件只认 pid+nonce 一致的进程（不再用路径子串）。
 6. **URL 不硬编码**：客户端用 `window.__VR_BACKEND__`（host 注入）优先，默认 `127.0.0.1:8788` 仅作兜底。
 

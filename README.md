@@ -40,8 +40,11 @@ DeepSeek Harness 原生视频检索插件：把监控视频时空目标定位能
 - [原理与架构](#原理与架构)
 - [检索流程](#检索流程)
 - [测试数据](#测试数据)
+- [测试与门禁](#测试与门禁)
+- [路径与状态根](#路径与状态根)
 - [目录结构](#目录结构)
 - [更新](#更新)
+- [排障与已知限制](#排障与已知限制)
 - [卸载](#卸载)
 - [许可](#许可)
 
@@ -65,7 +68,7 @@ DeepSeek Harness 原生视频检索插件：把监控视频时空目标定位能
 ### 方式一（推荐）：作为插件直接安装
 
 ```bash
-# 1. 安装插件包（dsh.bundle 自动合入 profile，prepare 脚本自动构建 dist/）
+# 1. 安装插件包（dsh.bundle 自动合入 profile；prepare 会构建 dist/index.js）
 dsh plugin --profile web add github:zhouql-dev/dsh-video-retrieval
 
 # 2. 部署预设 + 下载权重（install.sh 从 profile 里定位已安装的包）
@@ -75,6 +78,12 @@ bash /tmp/dsh-video-retrieval/scripts/install.sh
 # 3. 重启 DSH（bundle 补丁是启动时事实）
 npx @deepseek-ai/dsh web
 ```
+
+> **安装时发生了什么**：`package.json` 的 `main`/`exports` 指向 `packages/vr-plugin/dist/`，
+> 而 `dist/` 不入库 —— 它由 `prepare` 在安装时生成（`node packages/vr-plugin/build.mjs`）。
+> 如果你的环境设了 `ignore-scripts=true`（CI / 离线镜像常见），`prepare` 不会跑，
+> 装出来会缺 `dist/index.js`：这类环境请改用 Release 里的 `dsh-video-retrieval-dist.tar.gz`
+> （解到包根即可），或先 `bash scripts/install.sh` 再装。
 
 ### 方式二：从源码安装（开发）
 
@@ -112,7 +121,7 @@ npx @deepseek-ai/dsh web
 
 ## 模型权重说明
 
-插件需要以下模型权重。前三个由 `scripts/setup.sh` 从 GitHub Releases 下载到仓库 `models/`；insightface 模型由库自动下载到 `~/.insightface/`。
+插件需要以下模型权重。前三个由 `scripts/setup.sh` 从 GitHub Releases 下载到**包内 `models/`**（桌面 profile 是软链安装，即仓库的 `models/`）；insightface 模型由库自动下载到 `~/.insightface/`。
 
 | 权重 | 引擎 | 用途 | 大小 | 必需 | 下载位置 |
 |---|---|---|---|---|---|
@@ -164,12 +173,12 @@ npx @deepseek-ai/dsh web
 ```
 案例确认 ──► 合并数据集(确认案例 + PRW + CCPD-GT) ──► Optuna 阈值优化
            ──► Layer1 混淆表/提示词反射 ──► holdout 门禁(新≥旧−0.005)
-           ──► rollback 快照 ──► 热加载到 config/ ──► 下次检索生效
+           ──► rollback 快照 ──► 热加载到 <状态根>/config/ ──► 下次检索生效
 ```
 
 - **评估器极便宜**：信号 raw 值缓存后，优化只是"换阈值→重新投票→数对错"，微秒级。
 - **质量分 = macro-F1**：数据极端不平衡（1 真 vs 54 噪声），accuracy 无效。
-- `.veto` 冻结演化；`config/rollback/` 存快照；`evolutions.jsonl` 审计。
+- `.veto` 冻结演化；`<状态根>/config/rollback/` 存快照；`<状态根>/config/evolutions.jsonl` 审计（状态根默认 `~/.dsh/video-retrieval`）。
 
 ### 4. 作为 DSH 插件的结构
 
@@ -187,7 +196,7 @@ DeepSeek Harness 进程
    引擎  packages/vr-backend/vr_backend/engines/*.py（preflight / locate / verify_target / person_search / fast_plate_scan）
 ```
 
-DSH **本身就是 agent 循环**：会话智能体读 skill 手册 → 计划 → 调 vr_* 工具 → 后端跑确定性剧本 → 三信号投票出结果。插件的 `agent/loop.py`（原 fusion 自带的 ReAct）不重复实现。
+DSH **本身就是 agent 循环**：会话智能体读 skill 手册 → 计划 → 调 vr_* 工具 → 后端跑确定性剧本 → 三信号投票出结果。插件的 `packages/vr-backend/vr_backend/agent/loop.py` 不重复实现它。
 
 ---
 
@@ -252,6 +261,66 @@ DSH **本身就是 agent 循环**：会话智能体读 skill 手册 → 计划 �
 
 ---
 
+## 测试与门禁
+
+一条命令跑全部（不需要 pytest，纯脚本 + 退出码）：
+
+```bash
+# 用带 torch/ultralytics 的那个 venv 解释器，不要用系统 python3
+PYTHONDONTWRITEBYTECODE=1 python3 tests/run_all.py
+# → 合计：401 通过 / 0 失败 / 22 个套件
+# → PASS 全部通过
+```
+
+三层分工（详见 [`tests/README.md`](tests/README.md)）：
+
+| 层 | 例子 | 回答什么 |
+|---|---|---|
+| 契约层 | `test_artifacts_contract.py`、`test_paths_contract.py` | 引擎↔服务↔前端的产物格式对不对；Python 与 JS 的路径解析是否一致 |
+| 后端单测 | `test_smoke.py`、`test_agent.py`、`test_server.py`、`bench/` | 检索管线、评测指标、服务端点、agent 循环 |
+| 回归层 | `test_p0_*.py`、`test_p1_*.py`、`test_p2_*.py`、`golden/` | 某个具体 bug 修完不许回来 |
+
+三道门禁（提交前都该绿）：
+
+```bash
+bash scripts/check-consistency.sh   # ① profile↔仓库 ② 一份代码 ③ 路径单点 ④ 工作区
+bash scripts/sync.sh --check        # I1：同名模块只出现一次、包内没有可写目录
+node packages/vr-plugin/build.mjs && node scripts/smoke.mjs   # 构建 + 16 工具注册 + 客户端 slot
+```
+
+CI（`.github/workflows/ci.yml`）四个 job：`build-smoke`（Node 22）、`py-import`、`py-unit`、`no-hardcoded-home`；
+`release.yml` 在打 tag 前重跑全量测试。`smoke.mjs` 在拿不到 `@deepseek-ai/dsh-tools` peer 时显式
+`exit 3`（跳过），不会假装通过。
+
+---
+
+## 路径与状态根
+
+"东西在哪"只有一个实现：`packages/vr-backend/vr_backend/paths.py`（Python 权威），
+`packages/vr-plugin/src/paths.js` 逐条镜像；`tests/test_paths_contract.py` 在
+默认 / `VTL_STATE_DIR` / `DSH_HOME` 三种环境下比对两端的输出，漂一个键就红。
+
+```bash
+PYTHONPATH=packages/vr-backend $PY -m vr_backend.paths --print
+node packages/vr-plugin/src/paths.js --print     # 必须与上面逐键相同
+```
+
+| 键 | 解析顺序 |
+|---|---|
+| `state_root` | `VTL_STATE_DIR` → `$DSH_HOME/video-retrieval` → `~/.dsh/video-retrieval` |
+| `weights_root` | `VTL_WEIGHTS_DIR` → `<repo>/models` → `~/.cache/vr/weights` |
+| `bench_root` | `BENCH_DATA` → `<repo>/dataset` → `<repo>/../dataset` |
+| `engines_dir` | `SKILL_SCRIPTS` → `<backend>/engines` |
+| `client_root` | `FUSION_WEB` → `<repo>/packages/vr-plugin/client` |
+
+状态根里放**全部可写数据**：`cases.jsonl`、`jobs/`、`uploads/`、`config/`、`server.log`、
+`server.pid`、`server.identity.json`。仓库内没有任何可写目录——升级/重装不动数据。
+
+后端 8788（`VTL_PORT` 可覆盖）、单实例（`flock` 锁 `<state>/server.pid`，第二个实例 exit 2）、
+`GET /health` 返回 `{version,pid,nonce,state_root,cases_path}`，插件只认 pid+nonce 一致的进程。
+
+---
+
 ## 目录结构
 
 ```
@@ -273,11 +342,17 @@ dsh-video-retrieval/            # npm 包根（安装入口不变）
 │       ├── preset/video-retrieval/   # 模式组合 + 自带 skill
 │       ├── cordis.patch.yml  #   bundle 补丁
 │       └── build.mjs         #   构建 dist/index.js + dist/paths.js
-├── tests/                    # 全部测试（一条命令：tests/run_all.py）
-├── scripts/                  # serve/install/setup/sync/check-consistency/smoke/cdp
-├── docs/                     # ENTRY-CONTRACT.md 等
+├── tests/                    # 全部测试（run_all.py 一条命令跑 22 套件）
+│   ├── README.md             #   三层划分与约定
+│   ├── fixtures/frames3/     #   产物契约用的 3 帧 fixture（100 KB，入库）
+│   └── golden/               #   指标 golden 值（手算，改算法即红）
+├── scripts/                  # serve/install/setup/sync/check-consistency/smoke/cdp/merge_cases
+├── docs/                     # ENTRY-CONTRACT.md（双入口契约）等
 ├── models/                   # .gitignore；权重（setup.sh 下载到这里）
-├── archive/                  # 旧树归档（fusion 代码 tar、旧案例库）
+├── archive/                  # 旧树归档：fusion 代码 tar、旧案例库、旧配置
+├── package-lock.json         # npm lock（1 个包）
+├── pnpm-lock.yaml            # pnpm lock（9 行；peer 不自动安装）
+├── pnpm-workspace.yaml       # autoInstallPeers: false（peers 由 DSH 宿主提供）
 └── .github/workflows/        # ci.yml + release.yml
 
 运行时状态**不在仓库里**：默认 `~/.dsh/video-retrieval/`（cases.jsonl / jobs / uploads / config /
@@ -295,17 +370,45 @@ bash scripts/install.sh        # 若预设/脚本有更新
 # 浏览器刷新页面即可（客户端 bundle 内容变更无需重启 dsh）
 ```
 
-## 开发者：同步 vendored 源码
+状态根在包外，升级不动数据；但**改了 `env` / 端口 / 后端代码**要看后端起没起：
+
+```bash
+curl -s localhost:8788/health          # {status, version, pid, nonce, state_root, ...}
+curl -s -X POST -H 'X-Requested-With: vr-console' localhost:8788/shutdown   # 正常关后端
+```
+
+## 开发者：引擎与后端的关系
 
 引擎脚本在 `packages/vr-backend/vr_backend/engines/`，后端在 `packages/vr-backend/vr_backend/` —— **两者都是本仓库的唯一源码**（`fusion/` 已于 2026-11-16 归档，见 `fusion/README-ARCHIVE.md`）。若引擎仍有外部 skill 源，用 `sync.sh` 从那里单向同步（不 `--delete`）：
 
 ```bash
-VTL_REPO_DIR=/path/to/your/video-retrieval        # 含 fusion/ 的私有仓库根
-VTL_SKILL_DIR=/path/to/skills/video-target-localize
-bash scripts/sync.sh
+VTL_SKILL_DIR=/path/to/skills/video-target-localize   # 有外部 skill 源时才需要
+bash scripts/sync.sh                                  # 同步引擎（不 --delete）
+bash scripts/sync.sh --check                           # 只校验 I1（一份代码）
 ```
 
-未设置这两个环境变量时，`sync.sh` 会安全跳过对应部分。
+不设 `VTL_SKILL_DIR` 时跳过同步，只做校验。`scripts/sync.sh` **不会再往这里写后端代码**——
+`fusion/` 已归档，再从它 rsync 会把这个包的后端删空。
+
+---
+
+## 排障与已知限制
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `ERR_PNPM_UNEXPECTED_STORE`（`dsh plugin add` 时） | 该 profile 的 `node_modules` 是旧大版本 pnpm 装的（store v10），DSH 自带 pnpm 11 要 store v11 | 要么 `cd ~/.dsh/profiles/<p> && pnpm install` 重新链到新 store（要联网），要么直接把 `node_modules/dsh-video-retrieval` 软链到本仓库（与 desktop profile 同款） |
+| 后端起不来，日志 `[fatal] 已有后端在跑（pid=…）` | 单实例锁（`<state>/server.pid`） | 先 `curl -X POST -H 'X-Requested-With: vr-console' localhost:8788/shutdown`；不行再 `kill <pid>` |
+| 插件报 `backend … is a foreign server` | 插件与后端的 `state_root` 不一致（多份状态根） | 两边都跑 `paths.py/paths.js --print` 比对 `state_root`；用 `VTL_STATE_DIR` 对齐 |
+| 端口 8788 被别的进程占着 | 上一版后端没退干净 | `lsof -ti tcp:8788` 找 pid；或 `VTL_PORT` 换端口并同步 `backendUrl` |
+| 演化一直是 `no_data` | **数据缺口**：案例库 81 条、5 条已确认，但没有一条带 `scored` 的尝试 | 跑一次带 rescoring 的检索并人工确认几例；接线本身是通的（`tests/test_p2_evolve_feed.py` 证明） |
+| 装了插件但 16 个工具没出来 | 安装时 `prepare` 没跑（`ignore-scripts=true`），`dist/index.js` 缺失 | 见[安装](#安装)的说明：用 Release asset 或先 `bash scripts/install.sh` |
+
+**已知限制**
+
+- 单路视频；多摄像头协同不在本插件范围（架构里预留了）。
+- RSTPReid 零样本 R@1 只有 0.074（训练版 SOTA 0.62）——文本→行人检索是能力短板，如实标注。
+- CCPD `balance` 子集的文件名已匿名化，**车牌文本 GT 不可得**，只能测检测、测不了识别。
+- WeVisOne 只在去重后的裁剪图上稀疏推理；缺失时该票自动弃权，行为与引入前一致。
 
 ---
 
@@ -316,6 +419,9 @@ rm -rf ~/.dsh/.agent-presets/video-retrieval
 dsh plugin --profile web remove dsh-video-retrieval
 # 重启 dsh web
 ```
+
+状态根 `~/.dsh/video-retrieval/`（案例库、任务、上传、配置）**不会**被卸载删除——
+里面有唯一不可再生的人工标注，要清就自己确认后 `rm -rf`。权重在 `<repo>/models/` 同理。
 
 ## 许可
 
