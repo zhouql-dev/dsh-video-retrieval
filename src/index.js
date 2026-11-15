@@ -12,7 +12,6 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 
 export const name = 'dsh-video-retrieval'
 export const inject = ['tools']
@@ -39,11 +38,28 @@ function discoverPython() {
   return 'python3'
 }
 
+// GUI-launched hosts (the DSH desktop app) inherit a minimal PATH —
+// /usr/bin:/bin:/usr/sbin:/sbin — with no Homebrew, so ffmpeg/tesseract are
+// invisible to every spawned engine and video transcode/OCR fail with a 500.
+// Prepend the usual toolchain dirs for each child we spawn.
+const TOOL_PATH_DIRS = ['/opt/homebrew/bin', '/opt/homebrew/sbin',
+                        '/usr/local/bin', '/usr/local/sbin']
+
+/**
+ * @param {string|undefined} current
+ * @returns {string} PATH with the toolchain dirs guaranteed present
+ */
+function toolPath(current) {
+  const parts = String(current || '').split(':').filter(Boolean)
+  for (const d of TOOL_PATH_DIRS) if (!parts.includes(d)) parts.push(d)
+  return parts.join(':')
+}
+
 /**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {Record<string, unknown>} config row config from agent.cordis.yml
  */
-export function apply(ctx, config = {}) {
+export async function apply(ctx, config = {}) {
   const str = (v) => (typeof v === 'string' && v !== '' ? v : undefined)
   const cfg = {
     python: str(config.python) || discoverPython(),
@@ -81,7 +97,8 @@ export function apply(ctx, config = {}) {
       try {
         child = spawn(cfg.python, args, {
           cwd: cwd || cfg.engineDir || undefined,
-          env: env ? { ...process.env, ...env } : undefined,
+          env: { ...process.env, ...(env || {}),
+                 PATH: toolPath((env && env.PATH) || process.env.PATH) },
           stdio: ['ignore', 'pipe', 'pipe'],
         })
       } catch (err) {
@@ -107,6 +124,7 @@ export function apply(ctx, config = {}) {
   function backendEnv() {
     return {
       ...process.env,
+      PATH: toolPath(process.env.PATH),
       SKILL_SCRIPTS: cfg.engineDir,
       FUSION_CONFIG: cfg.configDir,
       FUSION_CASES: path.join(cfg.dataDir, 'cases.jsonl'),
@@ -219,6 +237,20 @@ export function apply(ctx, config = {}) {
         child.unref()
       } catch { /* console backend is best-effort at boot */ }
     })()
+    return
+  }
+
+  // dsh-tools is imported lazily, only on the tool-registering path. The
+  // clientOnly console row above must import even where '@deepseek-ai/dsh-tools'
+  // is not resolvable from the plugin's own location — notably a `link:` install
+  // pointing at a source tree outside the profile (the desktop app's local-path
+  // install). A top-level import would fail the whole row ("failed to import")
+  // and the embedded console would never appear.
+  let defineTool
+  try {
+    ({ defineTool } = await import('@deepseek-ai/dsh-tools'))
+  } catch (err) {
+    ctx.logger?.warn?.(`dsh-video-retrieval: @deepseek-ai/dsh-tools unavailable (${err?.message ?? err}); vr_* tools not registered`)
     return
   }
 

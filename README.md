@@ -51,9 +51,11 @@ DeepSeek Harness 原生视频检索插件：把监控视频时空目标定位能
 
 - **自然语言 / 参考图检索**：文本描述或人脸/人体图 → 时间区间 + 逐帧框 + 标注视频
 - **云边协同漏斗**：云端粗筛时间段 + 本地精查 + 多信号交叉验证
-- **多信号甄别**：衣着色相 / 时间相似度曲线 / VLM 图对图终审，三票（默认 ≥2）才判命中
+- **多信号甄别**：衣着色相 / 时间相似度曲线 / VLM 图对图终审 / **WeVisOne 本地 referring**，最多四票（默认 ≥2，`--agree 3` 进精确模式）
+- **云端可选**：`WEVISONE_DOWNLOAD=1` 后纯文本分支与终审本地化，无 key 全流程可跑（实测已验证）
 - **递归自进化**：案例确认 → Optuna 阈值优化 + 提示词/混淆表反射 → holdout 门禁 → 热加载
 - **嵌入式三列控制台**：保留左侧会话列表，随时切回 DeepSeek 对话
+- **流水线实时可视化**：控制台底部 Dify 风格 DAG（视频输入→预检→路由→粗筛/检测/去重→多信号→投票→输出），标明每步模型，SSE 驱动节点状态与数据流动画
 - **16 个原生工具**：`vr_search` / `vr_preflight` / `vr_job_cancel` / `vr_evolve` 等
 
 ---
@@ -90,7 +92,21 @@ npx @deepseek-ai/dsh web
 - Node ≥ 22、pnpm
 - Python ≥ 3.10 + venv（含 torch / ultralytics / opencv-python / rapidocr-onnxruntime / insightface / transformers / torchreid / scipy / optuna / fastapi / uvicorn / litellm）
 - ffmpeg、tesseract（车牌 OCR）
-- 可选 API key：`ZHIPUAI_API_KEY` / `DASHSCOPE_API_KEY`（无 key 时自动降级到本地全扫，不崩不谎报）
+- 可选 API key：`DEEPSEEK_API_KEY`（推荐，视觉 VLM 默认）/ `ZHIPUAI_API_KEY` / `DASHSCOPE_API_KEY`（无 key 时自动降级到本地全扫，不崩不谎报）
+
+### VLM 提供商（`VLM_PROVIDER=deepseek|glm|qwen`）
+
+云端视觉判断走 OpenAI 兼容接口，可任意切换，缺失时自动逐级 fallback（deepseek → glm → qwen），全无则静默降级到本地全扫：
+
+| 提供商 | 视觉模型 | 文本模型 | 说明 |
+|---|---|---|---|
+| **deepseek**（默认） | `deepseek-v4-flash-vision-exp` | `deepseek-v4-flash` | 前沿视觉推理，价格最省；**不支持原生视频**，云 grounding 仍回落 Qwen |
+| `glm` | `glm-4v-flash`（可 `GLM_VISION_MODEL` 覆盖） | `glm-5.1` | 免费档、弱；付费档常 `429 余额不足` |
+| `qwen` | `qwen-vl-max` | `qwen-plus` | DashScope 原生 `video_url`，**唯一能做云 grounding 的通道** |
+
+- 视觉 key 复用：未设 `DEEPSEEK_API_KEY` 时，若 `LLM_BASE_URL` 指向 `api.deepseek.com`，自动复用 agent 的 `LLM_API_KEY`。
+- Agent 编排 LLM（`LLM_MODEL`）保持独立（默认 `deepseek-v4-pro`），与检索视觉 VLM 分工不同；`/chat` 配置面板可改。
+- 权限可配：`ground` 工具仍要求 `DASHSCOPE_API_KEY`（原生视频），其余视觉调用可用 deepseek 完成。
 
 ---
 
@@ -105,10 +121,15 @@ npx @deepseek-ai/dsh web
 | `osnet_x1_0_msmt17_*.pth` | OSNet（行人重识别，高精度） | 同上的**高精度版**（x1.0），默认不用；设 `OSNET_WEIGHTS` 环境变量指向它即可启用 | ~17 MB | ➕ 可选 | `weights/osnet/` |
 | `ViT-B-32.pt` | CLIP（图文模型） | ① YOLO-World 的**文本编码器**（`set_classes` 依赖）② 兜底图文匹配 | ~350 MB | ✅ | `weights/clip/` |
 | `buffalo_l`（SCRFD `det_10g.onnx` + ArcFace `w600k_r50.onnx`） | insightface | **人脸识别**：SCRFD 检人脸 + ArcFace 512 维嵌入 | ~300 MB | ⚠️ 人脸检索时 | `~/.insightface/models/buffalo_l/`（首次使用自动下载） |
+| `WeVisOne-VL-2B` | 腾讯 WeVisOne-VL（统一感知 VLM） | **本地语义第四票**：referring 定位 + 可靠拒绝（目标不存在返 None），替代/兜底云端 VLM 终审 | ~5.6 GB | ➕ 可选（`WEVISONE_DOWNLOAD=1 bash scripts/setup.sh`） | HuggingFace `tencent/WeVisOne-VL-2B`（自动尝试 hf-mirror） |
+
+> **WeVisOne-VL 说明**：MPS（Apple Silicon）加载 ~9s、单 crop ~1.2s / 批量 ~0.7s；只在**去重后的候选裁剪图**上稀疏推理（几十张），不参与逐帧扫描。缺失时信号自动弃权，检索行为与引入前完全一致。运行时 venv 需可 import `wevisone_vl`（`pip install -e <wevisone检出> --no-deps` + `accelerate qwen_vl_utils safetensors`）。
 
 > **离线部署提示**：完全离线机器需预先把 `buffalo_l` 模型包放进 `~/.insightface/models/buffalo_l/`，否则人脸检索首次调用会尝试联网下载。
 
 **降级链**（某引擎权重缺失时自动逐级退）：`insightface(ArcFace) → CLIP → VLM → 只出裁剪图给人工`，检索永不因缺模型而崩。
+
+**终审降级链**（verify/target 判定）：`WeVisOne 本地 referring（无 key、不出本地）→ 云 VLM（deepseek/glm/qwen，需 key）→ unclear`。语义粗筛仍是云优先（快），`--no-ground` 时全片本地扫描兜底；WeVisOne 的显式拒绝（None）是**有效反对票**，与弃权不同——`--agree 3` 时可拦截色相+曲线双过线的误报。
 
 ---
 

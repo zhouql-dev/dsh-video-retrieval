@@ -30,4 +30,15 @@ download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$DEST/weights/osnet
 download osnet_x1_0.pth         "$PREFIX/$OSNET_X1_0"       "$DEST/weights/osnet/$OSNET_X1_0"
 download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$DEST/weights/clip/ViT-B-32.pt"
 
+# Optional: WeVisOne-VL-2B (local semantic verifier / fourth voting signal).
+# ~5.6 GB via HuggingFace (hf-mirror fallback); pipeline degrades to abstain
+# (identical to today's behavior) when absent. Enable explicitly:
+#   WEVISONE_DOWNLOAD=1 bash scripts/setup.sh
+if [ "${WEVISONE_DOWNLOAD:-0}" = "1" ]; then
+  echo "downloading WeVisOne-VL-2B (~5.6 GB) into $DEST/weights/hf-home ..."
+  DEST="$DEST" "$HERE/scripts/fetch_wevisone.sh"
+else
+  echo "skip wevisone weights (set WEVISONE_DOWNLOAD=1 to fetch ~5.6 GB)"
+fi
+
 echo "weights ready in $DEST/weights/"
