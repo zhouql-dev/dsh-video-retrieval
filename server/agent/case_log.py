@@ -14,6 +14,7 @@ Dependency-free (stdlib only) so agents can record cases in any environment.
 from __future__ import annotations
 import json
 import os
+import threading
 from datetime import datetime
 
 _REQUIRED = ["id", "ts", "query", "query_type", "inputs", "plan", "attempts", "outcome"]
@@ -45,15 +46,21 @@ def validate(case: dict) -> list[str]:
     return problems
 
 
+# P0-8：案例文件的读-改-写与追加必须互斥，否则 confirm 的整文件重写会
+# 抹掉并发 append 的行（os.replace 只保证不撕裂，不保证不丢）。
+CASE_LOCK = threading.RLock()
+
+
 def record_case(case: dict, path: str = DEFAULT_CASES_PATH) -> tuple[bool, str]:
     """Validate and append one case to the JSONL log. Returns (ok, msg)."""
-    problems = validate(case)
-    if problems:
-        return False, "; ".join(problems)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "a") as f:
-        f.write(json.dumps(case, ensure_ascii=False) + "\n")
-    return True, f"recorded {case.get('id')}"
+    with CASE_LOCK:
+        problems = validate(case)
+        if problems:
+            return False, "; ".join(problems)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as f:
+            f.write(json.dumps(case, ensure_ascii=False) + "\n")
+        return True, f"recorded {case.get('id')}"
 
 
 def iter_cases(path: str = DEFAULT_CASES_PATH):

@@ -60,7 +60,32 @@ def _resolve_model_path(model_id: str) -> str:
     return model_id
 
 _lock = threading.Lock()
-_state: dict = {"model": None, "failed": False, "reason": ""}
+_state: dict = {"model": None, "failed": False, "reason": "",
+                "fails": 0, "retry_at": 0.0}
+
+# P0-13：失败不再"一次即永久 abstain"。连续 N 次失败才熔断，熔断后冷却 M 秒
+# 再试一次；成功一次即清零。可用环境变量调。
+_MAX_FAILS = int(os.environ.get("VTL_WV_MAX_FAILS", "3"))
+_COOLDOWN_S = float(os.environ.get("VTL_WV_COOLDOWN_S", "60"))
+
+
+def _note_failure(exc: Exception) -> None:
+    """记一次失败：连续到阈值才熔断（带冷却），而不是一次就永久放弃。"""
+    _state["fails"] = int(_state.get("fails", 0)) + 1
+    _state["reason"] = f"{type(exc).__name__}: {exc}"
+    if _state["fails"] >= _MAX_FAILS:
+        _state["failed"] = True
+        _state["retry_at"] = time.time() + _COOLDOWN_S
+        print(f"[wevisone] 连续 {_state['fails']} 次失败，熔断 {_COOLDOWN_S:.0f}s："
+              f"{_state['reason']}", flush=True)
+
+
+def _maybe_reset() -> None:
+    """熔断到期后允许再试一次。"""
+    if _state["failed"] and time.time() >= float(_state.get("retry_at") or 0):
+        _state["failed"] = False
+        _state["fails"] = 0
+        print("[wevisone] 冷却结束，重试", flush=True)
 
 
 def _parse_referring(response: str) -> tuple[list, bool]:
@@ -101,6 +126,7 @@ def available() -> bool:
     """True iff a usable local model can be loaded (cheap after first call)."""
     if not enabled():
         return False
+    _maybe_reset()
     if _state["model"] is not None or _state["failed"]:
         return not _state["failed"]
     try:
@@ -120,6 +146,7 @@ def status() -> dict:
 def _get_model():
     """Load the engine once (thread-safe). Any failure is cached as failed."""
     with _lock:
+        _maybe_reset()
         if _state["model"] is not None or _state["failed"]:
             return _state["model"]
         model_id = os.environ.get(_MODEL_ENV) or _DEFAULT_MODEL
@@ -145,8 +172,7 @@ def _get_model():
             print(f"[wevisone] loaded {model_id} (resolved: {model_path}) on {m.device} "
                   f"in {time.perf_counter() - t0:.1f}s", flush=True)
         except Exception as exc:                     # noqa: BLE001 — degrade
-            _state["failed"] = True
-            _state["reason"] = f"{type(exc).__name__}: {exc}"
+            _note_failure(exc)
             print(f"[wevisone] unavailable -> signals abstain ({_state['reason']})",
                   flush=True)
         return _state["model"]
@@ -184,8 +210,7 @@ def refer(query: str, crop_bgr, max_tokens: int = 256) -> Optional[dict]:
         return {"match": "no" if said_none else "unclear", "boxes": [],
                 "latency_s": round(latency, 3), "response": response[:200]}
     except Exception as exc:                         # noqa: BLE001 — degrade
-        _state["failed"] = True
-        _state["reason"] = f"{type(exc).__name__}: {exc}"
+        _note_failure(exc)
         return None
 
 
@@ -222,8 +247,7 @@ def refer_batch(query: str, crops_bgr, max_tokens: int = 256) -> list[Optional[d
                           "latency_s": latency, "response": response[:200]}
         return out
     except Exception as exc:                         # noqa: BLE001 — degrade
-        _state["failed"] = True
-        _state["reason"] = f"{type(exc).__name__}: {exc}"
+        _note_failure(exc)
         return [None] * len(crops_bgr or [])
 
 

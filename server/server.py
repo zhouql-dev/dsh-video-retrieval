@@ -435,19 +435,21 @@ def list_cases():
 
 @app.post("/cases/{case_id}/confirm")
 def confirm_case(case_id: str, req: ConfirmRequest):
-    cases = list(CL.iter_cases(CASES_PATH))
-    target = next((c for c in cases if c.get("id") == case_id), None)
-    if target is None:
-        raise HTTPException(404, f"unknown case {case_id}")
-    target["human_confirmed"] = True
-    target["gt"] = req.gt or {}
-    os.makedirs(os.path.dirname(CASES_PATH), exist_ok=True)
-    tmp = CASES_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        for c in cases:
-            f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    os.replace(tmp, CASES_PATH)
-    return target
+    # P0-8：整段读-改-写必须在 CASE_LOCK 内，和 case_log.record_case 的追加互斥
+    with CL.CASE_LOCK:
+        cases = list(CL.iter_cases(CASES_PATH))
+        target = next((c for c in cases if c.get("id") == case_id), None)
+        if target is None:
+            raise HTTPException(404, f"unknown case {case_id}")
+        target["human_confirmed"] = True
+        target["gt"] = req.gt or {}
+        os.makedirs(os.path.dirname(CASES_PATH), exist_ok=True)
+        tmp = f"{CASES_PATH}.{uuid.uuid4().hex[:8]}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for c in cases:
+                f.write(json.dumps(c, ensure_ascii=False) + "\n")
+        os.replace(tmp, CASES_PATH)
+        return target
 
 
 # --------------------------------------------------------------------------- #
