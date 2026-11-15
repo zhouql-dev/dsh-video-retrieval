@@ -27,5 +27,13 @@
     "type": "git",
     "url": "https://github.com/zhouql-dev/dsh-video-retrieval"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  }
 }

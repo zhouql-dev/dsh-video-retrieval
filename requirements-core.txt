@@ -1,0 +1,10 @@
+# CI / 无 GPU 机器的最小依赖（P2-4；对应 requirements.txt 的 core-lite 档）
+numpy==2.4.6
+scipy==1.17.1
+requests==2.34.2
+opencv-python-headless==4.13.0.92
+fastapi==0.137.2
+uvicorn==0.49.0
+httpx==0.28.1
+pydantic==2.13.4
+python-multipart==0.0.20

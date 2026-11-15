@@ -28,7 +28,7 @@ jobs:
       - name: Install core-lite deps (no torch)
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi uvicorn numpy scipy opencv-python-headless requests httpx pydantic
+          pip install -r requirements-core.txt
       - name: Compile
         run: python -m compileall -q server engine
       - name: Import smoke
@@ -51,7 +51,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi uvicorn numpy scipy opencv-python-headless requests httpx pydantic
+          pip install -r requirements-core.txt
       - name: Unit tests (no model / no GPU)
         run: python tests/run_all.py
 
