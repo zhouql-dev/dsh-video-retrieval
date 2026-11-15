@@ -1,0 +1,116 @@
+{
+  "_comment": "P2-3 golden：手算值，不代表历史 bench 结果。改 metrics.py 的算法/常数必须同步改这里，否则 CI 红。",
+  "coverage": [
+    {
+      "name": "gt 全被覆盖、无 FP",
+      "pred": [
+        [
+          1.0,
+          2.0
+        ],
+        [
+          5.0,
+          6.0
+        ]
+      ],
+      "gt": [
+        [
+          1.0,
+          2.0
+        ]
+      ],
+      "expect": {
+        "gt_covered_frac": 1.0,
+        "n_pred": 2,
+        "n_gt": 1
+      }
+    },
+    {
+      "name": "覆盖一半",
+      "pred": [
+        [
+          1.0,
+          1.5
+        ]
+      ],
+      "gt": [
+        [
+          1.0,
+          2.0
+        ]
+      ],
+      "expect": {
+        "gt_covered_frac": 0.5,
+        "n_pred": 1,
+        "n_gt": 1
+      }
+    },
+    {
+      "name": "空预测",
+      "pred": [],
+      "gt": [
+        [
+          1.0,
+          2.0
+        ]
+      ],
+      "expect": {
+        "gt_covered_frac": 0.0,
+        "n_pred": 0,
+        "n_gt": 1
+      }
+    }
+  ],
+  "cmc": [
+    {
+      "name": "首位命中",
+      "is_pos": [
+        true,
+        false,
+        false,
+        false
+      ],
+      "expect": {
+        "cmc1": 1.0
+      }
+    },
+    {
+      "name": "第三位命中",
+      "is_pos": [
+        false,
+        false,
+        true,
+        false
+      ],
+      "expect": {
+        "cmc1": 0.0
+      }
+    }
+  ],
+  "ocr": [
+    {
+      "name": "完全一致",
+      "gt": "Q1G728",
+      "pred": "Q1G728",
+      "expect": "exact"
+    },
+    {
+      "name": "易混替换",
+      "gt": "Q1G728",
+      "pred": "O1G728",
+      "expect": "confusable"
+    },
+    {
+      "name": "完全无关",
+      "gt": "Q1G728",
+      "pred": "Z9X000",
+      "expect": "miss"
+    }
+  ],
+  "ocr_confusables": {
+    "Q": "0O9",
+    "1": "I",
+    "8": "B",
+    "2": "Z"
+  }
+}

@@ -149,3 +149,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    
+    # P2-2：统一退出码（缺产物/空文件/acceptance 失败 → exit 1）
+    import _guard
+    _out = None
+    for _i, _a in enumerate(sys.argv):
+        if _a == "--out" and _i + 1 < len(sys.argv):
+            _out = sys.argv[_i + 1]
+    _guard.finish(_out)
