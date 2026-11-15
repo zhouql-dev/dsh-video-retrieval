@@ -36,9 +36,9 @@ import eval_gt as E        # noqa: E402
 
 OUT_DIR = os.path.join(_FUSION, "bench_out", "harness_eval")
 
-FENGTAI = ("/Users/zhouql1978_1/Desktop/"
-           "52丰台康宁居小区东侧河边路口_26891F18_1603352385_1.mp4")
-REF_PNG = "/Users/zhouql1978_1/Desktop/截屏2026-08-02 下午7.04.15.png"
+# P1-9：素材由 env 提供（P2-2 会改成入 git 的 fixture），不再写死家目录
+FENGTAI = os.environ.get("VTL_EVAL_VIDEO", "")
+REF_PNG = os.environ.get("VTL_EVAL_REF", "")
 SMOKE = os.path.join(_REPO, "mvp_out", "smoke", "annotated.mp4")
 
 TASKS = {

@@ -29,7 +29,7 @@ import time
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
 for p in (_HERE, _FUSION, os.environ.get(
-        "SKILL_SCRIPTS", "/Users/zhouql1978_1/dev/AIupdating/skills/video-target-localize/scripts")):
+        "SKILL_SCRIPTS", os.path.join(_FUSION, "..", "engine"))):
     if p and p not in sys.path:
         sys.path.insert(0, p)
 

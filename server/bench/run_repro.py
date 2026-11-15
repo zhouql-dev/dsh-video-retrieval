@@ -37,9 +37,11 @@ for p in (_HERE, _FUSION):
 
 import metrics as M  # noqa: E402
 
-VIDEO = "/Users/zhouql1978_1/Desktop/52丰台康宁居小区东侧河边路口_26891F18_1603352385_1.mp4"
-REF = "/Users/zhouql1978_1/Desktop/截屏2026-08-02 下午7.04.15.png"
-YOLO_MODEL = "/Users/zhouql1978_1/dev/video-retrieval/yolov8s-worldv2.pt"
+# P1-9：素材/权重由 env 提供，缺省时运行前会明确报错（不再写死家目录）
+VIDEO = os.environ.get("VTL_REPRO_VIDEO", "")
+REF = os.environ.get("VTL_REPRO_REF", "")
+YOLO_MODEL = os.environ.get("VTL_YOLO_MODEL",
+                            os.path.join(_FUSION, "..", "yolov8s-worldv2.pt"))
 PERSON_QUERY = "穿粉红色外套、白色长裤、白色运动鞋、黑发扎起的成年女性"
 PERSON_GT = [(580.0, 580.5), (758.0, 760.0)]       # report-1 GT moments
 PERSON_NAIVE_FP = 91                                # the baseline we must beat

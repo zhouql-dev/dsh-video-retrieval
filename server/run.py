@@ -55,7 +55,7 @@ import config         # noqa: E402 — E0 runtime-config layer (observability)
 # without torch/ultralytics installed.
 SKILL_SCRIPTS = os.environ.get(
     "SKILL_SCRIPTS",
-    "/Users/zhouql1978_1/dev/AIupdating/skills/video-target-localize/scripts")
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "engine"))
 FAST_PLATE_SCAN = os.path.join(SKILL_SCRIPTS, "fast_plate_scan.py")
 
 

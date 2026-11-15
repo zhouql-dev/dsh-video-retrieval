@@ -54,3 +54,14 @@ jobs:
           pip install fastapi uvicorn numpy scipy opencv-python-headless requests httpx pydantic
       - name: Unit tests (no model / no GPU)
         run: python tests/run_all.py
+
+  no-hardcoded-home:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No absolute home paths in source
+        run: |
+          if grep -rn '/Users/' --include='*.py' server engine | grep -v '/tests/'; then
+            echo "FAIL 源码里出现写死的家目录路径"; exit 1
+          fi
+          echo "PASS 无硬编码家目录"

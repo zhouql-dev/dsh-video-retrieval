@@ -39,7 +39,7 @@ import signals as S            # noqa: E402
 
 SKILL_SCRIPTS = os.environ.get(
     "SKILL_SCRIPTS",
-    "/Users/zhouql1978_1/dev/AIupdating/skills/video-target-localize/scripts")
+    os.path.join(_FUSION, "..", "engine"))
 if SKILL_SCRIPTS not in sys.path:
     sys.path.insert(0, SKILL_SCRIPTS)
 
