@@ -1,0 +1,3 @@
+# pnpm 11 从 workspace 配置读 settings（.npmrc 里的同名键已不生效）。
+# peers（@deepseek-ai/dsh-tools）由 DSH 宿主提供，本仓库不装运行时。
+autoInstallPeers: false
