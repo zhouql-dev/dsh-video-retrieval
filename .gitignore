@@ -16,3 +16,11 @@ server/uploads/
 server/work/
 weights/
 yolov8s-worldv2.pt
+
+# 2026-11-15 P0-17 固化基线时补
+.env   # 密钥永不入库
+.env.*
+!.env.example   # 模板放行
+*.bak*   # 本地备份
+config/*.jsonl   # 演化日志属运行态
+server/loop.py   # agent/loop.py 的死拷贝（P1-18 删除）
