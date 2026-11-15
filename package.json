@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "prepare": "node build.mjs"
+    "prepare": "node build.mjs",
+    "test": "python3 tests/run_all.py"
   },
   "repository": {
     "type": "git",

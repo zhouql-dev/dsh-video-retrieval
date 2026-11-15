@@ -27,8 +27,18 @@ import glob
 import json
 import os
 
-DATA_ROOT = os.environ.get("BENCH_DATA", os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "dataset"))
+def _default_data_root() -> str:
+    """向上找 dataset/（fusion/ 与插件 server/ 两种布局都适用）。"""
+    cur = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        cand = os.path.join(cur, "dataset")
+        if os.path.isdir(cand):
+            return cand
+        cur = os.path.dirname(cur)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "dataset")
+
+
+DATA_ROOT = os.environ.get("BENCH_DATA") or _default_data_root()
 
 
 # --------------------------------------------------------------------------- #

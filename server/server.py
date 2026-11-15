@@ -826,30 +826,32 @@ def _run_chat_tool(name: str, args: dict) -> tuple[str, bool]:
         _blocked = {k: args.get(k) for k in ("base_url", "llm_key",
                                              "zhipu_key", "dashscope_key")
                     if args.get(k) is not None}
-        if _blocked:
-            return (json.dumps({
-                "拒绝": "密钥与 base_url 只能在配置页（设置面板）由用户手动修改，"
-                        "对话里不允许改。",
-                "被拒字段": sorted(_blocked)}, ensure_ascii=False), False)
         updates = {}
+        # P0-10：秘书/对话通道不许改密钥与 base_url；其余字段（如 model）照常生效
         if args.get("base_url") is not None:
-            updates["LLM_BASE_URL"] = str(args["base_url"]).strip()
+            pass   # 被拒：见下方 _blocked
         if args.get("model") is not None:
             updates["LLM_MODEL"] = str(args["model"]).strip()
         if args.get("llm_key") is not None:
-            updates["LLM_API_KEY"] = str(args["llm_key"]).strip()
+            pass   # 被拒
         if args.get("zhipu_key") is not None:
-            updates["ZHIPUAI_API_KEY"] = str(args["zhipu_key"]).strip()
+            pass   # 被拒
         if args.get("dashscope_key") is not None:
-            updates["DASHSCOPE_API_KEY"] = str(args["dashscope_key"]).strip()
+            pass   # 被拒
         if not updates:
+            if _blocked:
+                return (json.dumps({
+                    "拒绝": "密钥与 base_url 只能在配置页（设置面板）由用户手动修改。",
+                    "被拒字段": sorted(_blocked)}, ensure_ascii=False), False)
             return (json.dumps({"error": "没有给出要修改的字段"},
                                ensure_ascii=False), False)
         apply_settings(updates)
         s = get_settings()
         changed = bool(updates.keys() & {"LLM_BASE_URL", "LLM_API_KEY",
                                          "LLM_MODEL"})
-        return (json.dumps({"已保存": {
+        _extra = ({"被拒字段": sorted(_blocked),
+                   "说明": "密钥/base_url 只能在配置页手动改"} if _blocked else {})
+        return (json.dumps({**_extra, "已保存": {
                     "llm_base_url": s["llm_base_url"],
                     "llm_model": s["llm_model"],
                     "llm_api_key": s["llm_api_key_masked"] or "(已清除)",

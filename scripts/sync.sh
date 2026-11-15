@@ -29,7 +29,7 @@ if [ -n "$REPO" ]; then
   rsync -a --delete \
     --exclude '__pycache__' --exclude 'jobs' --exclude 'uploads' --exclude 'outputs' \
     --exclude 'output' --exclude 'bench_out' --exclude 'config' --exclude 'cases.jsonl' \
-    --exclude 'test_*.py' \
+    --exclude 'tests/' \
     "$REPO/fusion"/ "$HERE/server"/
   echo "server synced (fusion mirror)"
 else
