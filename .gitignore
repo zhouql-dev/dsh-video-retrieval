@@ -24,3 +24,4 @@ yolov8s-worldv2.pt
 *.bak*
 config/*.jsonl
 server/loop.py
+server/config/

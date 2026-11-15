@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
 export SKILL_SCRIPTS="$HERE/engine"
-export FUSION_CONFIG="$HERE/config"
+export FUSION_CONFIG="$STATE/config"   # 运行态配置跟状态走，不写包内（P1-10 的地基）
 # P0-2：唯一状态根（插件默认根，plugins 与 standalone 共用）
 STATE="${VTL_STATE_DIR:-$HOME/.dsh/video-retrieval}"
 export FUSION_CASES="$STATE/cases.jsonl"
@@ -15,7 +15,7 @@ export FUSION_UPLOADS="$STATE/uploads"
 export FUSION_WEB="$HERE/server/web"
 export BENCH_DATA="$REPO/dataset"
 PORT="${VTL_PORT:-8788}"
-mkdir -p "$STATE/jobs" "$STATE/uploads"
+mkdir -p "$STATE/jobs" "$STATE/uploads" "$STATE/config"
 VENV_PY="$REPO/video/bin/python"
 if curl -sf "http://127.0.0.1:$PORT/health" | grep -q "$STATE"; then
   echo "[serve] backend already running on :$PORT"
