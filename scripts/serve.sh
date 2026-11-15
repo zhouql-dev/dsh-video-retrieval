@@ -7,21 +7,23 @@ REPO="$(cd "$HERE/.." && pwd)"
 [ -f "$REPO/.env" ] && { set -a; . "$REPO/.env"; set +a; }
 export SKILL_SCRIPTS="$HERE/engine"
 export FUSION_CONFIG="$HERE/config"
-export FUSION_CASES="$HERE/data/cases.jsonl"
-export FUSION_JOBS="$HERE/data/jobs"
-export FUSION_UPLOADS="$HERE/data/uploads"
+# P0-2：唯一状态根（插件默认根，plugins 与 standalone 共用）
+STATE="${VTL_STATE_DIR:-$HOME/.dsh/video-retrieval}"
+export FUSION_CASES="$STATE/cases.jsonl"
+export FUSION_JOBS="$STATE/jobs"
+export FUSION_UPLOADS="$STATE/uploads"
 export FUSION_WEB="$HERE/server/web"
 export BENCH_DATA="$REPO/dataset"
 PORT="${VTL_PORT:-8788}"
-mkdir -p "$HERE/data/jobs" "$HERE/data/uploads"
+mkdir -p "$STATE/jobs" "$STATE/uploads"
 VENV_PY="$REPO/video/bin/python"
-if curl -sf "http://127.0.0.1:$PORT/health" | grep -q "$HERE/data"; then
+if curl -sf "http://127.0.0.1:$PORT/health" | grep -q "$STATE"; then
   echo "[serve] backend already running on :$PORT"
 else
-  echo "[serve] backend on http://127.0.0.1:$PORT (log: $HERE/data/server.log)"
+  echo "[serve] backend on http://127.0.0.1:$PORT (state: $STATE, log: $STATE/server.log)"
   nohup "$VENV_PY" "$HERE/server/server.py" --host 127.0.0.1 --port "$PORT" --warmup --watch 30 \
-    >> "$HERE/data/server.log" 2>&1 &
-  echo $! > "$HERE/data/server.pid"
+    >> "$STATE/server.log" 2>&1 &
+  echo $! > "$STATE/server.pid"
   sleep 1
 fi
 open "http://127.0.0.1:$PORT" 2>/dev/null || true
