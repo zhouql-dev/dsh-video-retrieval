@@ -676,13 +676,13 @@ async function loadCases(){
     const d=await jfetch("/cases");
     $("cases-count").textContent=`共 ${d.n} 条,已确认 ${d.n_confirmed} 条`;
     $("cases-body").innerHTML=d.cases.slice().reverse().map(c=>`
-      <tr><td class="mono">${c.id}</td><td class="mono">${(c.ts||"").slice(5,19)}</td>
-      <td>${c.query||""}</td><td>${c.query_type||""}</td><td>${c.outcome||""}</td>
+      <tr><td class="mono">${esc(c.id)}</td><td class="mono">${esc((c.ts||"").slice(5,19))}</td>
+      <td>${esc(c.query||"")}</td><td>${esc(c.query_type||"")}</td><td>${esc(c.outcome||"")}</td>
       <td>${c.human_confirmed?'<span class="badge conf">已确认</span>':'<span class="badge pend">待确认</span>'}</td>
-      <td>${c.human_confirmed?"":`<button class="mini" data-confirm="${c.id}">✓ 确认</button>`}
-        <details><summary>过程</summary><pre>${JSON.stringify({plan:c.plan,
+      <td>${c.human_confirmed?"":`<button class="mini" data-confirm="${esc(c.id)}">✓ 确认</button>`}
+        <details><summary>过程</summary><pre>${esc(JSON.stringify({plan:c.plan,
           attempts:(c.attempts||[]).map(a=>a.tool),outcome:c.outcome,
-          reasoning:c.agent_reasoning,gt:c.gt},null,2)}</pre></details></td></tr>`).join("")
+          reasoning:c.agent_reasoning,gt:c.gt},null,2))}</pre></details></td></tr>`).join("")
       ||`<tr><td colspan="7">暂无案例</td></tr>`;
     document.querySelectorAll("[data-confirm]").forEach(b=>b.onclick=()=>{
       const c=d.cases.find(x=>x.id===b.dataset.confirm)||{};
