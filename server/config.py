@@ -32,7 +32,17 @@ from datetime import datetime, timezone
 # paths
 # --------------------------------------------------------------------------- #
 
-_DEFAULT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+# P1-10：包内 config 只读（随包发布的默认值）；运行时写的是状态根下的 config/
+_PKG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+
+
+def state_root() -> str:
+    """唯一可写根，和 server.py 的判定保持一致。"""
+    return (os.environ.get("VTL_STATE_DIR")
+            or os.path.join(os.path.expanduser("~"), ".dsh", "video-retrieval"))
+
+
+_DEFAULT_DIR = os.path.join(state_root(), "config")
 
 CONFIG_FILES = ("thresholds", "confusables", "prompts")
 
@@ -40,6 +50,11 @@ CONFIG_FILES = ("thresholds", "confusables", "prompts")
 def config_dir() -> str:
     """The active config directory (``FUSION_CONFIG`` env overrides default)."""
     return os.environ.get("FUSION_CONFIG") or _DEFAULT_DIR
+
+
+def pkg_config_dir() -> str:
+    """随包发布的只读默认配置目录（运行时目录缺文件时回退到这里）。"""
+    return _PKG_DIR
 
 
 def _iso_now() -> str:
@@ -78,7 +93,13 @@ def load_runtime_config() -> dict:
     out = {"thresholds": {}, "confusables": {}, "prompts": {},
            "meta": {"dir": d, "errors": {}}}
     for name in CONFIG_FILES:
-        data, err = _read_json(os.path.join(d, f"{name}.json"))
+        path = os.path.join(d, f"{name}.json")
+        # P1-10：运行时目录没有该文件时，回退到包内只读默认配置（overlay 语义）
+        if not os.path.exists(path):
+            pkg = os.path.join(pkg_config_dir(), f"{name}.json")
+            if os.path.exists(pkg):
+                path = pkg
+        data, err = _read_json(path)
         out[name] = _without_meta(data)
         if "_meta" in data:
             out["meta"][f"{name}_meta"] = data["_meta"]

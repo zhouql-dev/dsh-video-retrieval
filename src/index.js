@@ -126,7 +126,7 @@ export async function apply(ctx, config = {}) {
       ...process.env,
       PATH: toolPath(process.env.PATH),
       SKILL_SCRIPTS: cfg.engineDir,
-      FUSION_CONFIG: cfg.configDir,
+      FUSION_CONFIG: path.join(cfg.dataDir, 'config'),   // P1-10：运行态配置跟状态根走
       FUSION_CASES: path.join(cfg.dataDir, 'cases.jsonl'),
       FUSION_JOBS: path.join(cfg.dataDir, 'jobs'),
       FUSION_UPLOADS: path.join(cfg.dataDir, 'uploads'),
@@ -181,11 +181,28 @@ export async function apply(ctx, config = {}) {
   async function ensureBackend(signal) {
     if (backendReady) return true
     const expectedCases = path.join(cfg.dataDir, 'cases.jsonl')
-    const trust = (d) => d?.status === 'ok' && String(d?.cases_path ?? '').includes(cfg.dataDir)
+    // P1-11：用 pid + nonce 握手判断"是不是我家的后端"，不再用路径子串
+    const identityPath = path.join(cfg.dataDir, 'server.identity.json')
+    const readIdentity = () => {
+      try { return JSON.parse(fs.readFileSync(identityPath, 'utf8')) } catch { return null }
+    }
+    const trust = (d) => {
+      if (d?.status !== 'ok') return false
+      const id = readIdentity()
+      if (id && d.nonce && id.nonce === d.nonce && Number(d.pid) === Number(id.pid)) return true
+      // 兼容：老后端没有 nonce 时，退回"状态根一致"的判定
+      if (!d.nonce) return String(d?.cases_path ?? '').includes(cfg.dataDir)
+      return false
+    }
     const probe = await http('GET', '/health', undefined, { signal, timeoutMs: 2000 })
     if (probe.status === 200 && trust(probe.data)) { backendReady = true; return true }
     if (probe.status === 200 && probe.data?.status === 'ok') {
-      throw new Error(`a foreign server occupies ${cfg.backendUrl} (cases_path=${probe.data?.cases_path}); expected ${expectedCases}. Stop it or change backendUrl in the preset config.`)
+      const id = readIdentity()
+      throw new Error(
+        `a foreign server occupies ${cfg.backendUrl} (pid=${probe.data?.pid ?? '?'}, ` +
+        `nonce=${String(probe.data?.nonce ?? '').slice(0, 8) || 'none'}, expected pid=${id?.pid ?? '?'}); ` +
+        `cases_path=${probe.data?.cases_path}; expected ${expectedCases}. ` +
+        `Stop it (kill ${probe.data?.pid ?? '?'}) or change backendUrl in the preset config.`)
     }
     fs.mkdirSync(cfg.dataDir, { recursive: true })
     const logFd = fs.openSync(path.join(cfg.dataDir, 'server.log'), 'a')

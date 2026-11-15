@@ -89,6 +89,34 @@ def _load_env_file() -> str:
 
 ENV_FILE_LOADED = _load_env_file()
 
+# P1-11：本进程身份（用于插件判断"这个后端是不是我起的"，替代子串匹配）
+VERSION = "0.3.0"
+try:
+    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "package.json"), encoding="utf-8") as _pf:
+        VERSION = json.load(_pf).get("version", VERSION)
+except Exception:                                          # noqa: BLE001
+    pass
+
+NONCE = uuid.uuid4().hex
+
+
+def _state_root() -> str:
+    return (os.environ.get("VTL_STATE_DIR")
+            or os.path.join(os.path.expanduser("~"), ".dsh", "video-retrieval"))
+
+
+def _write_identity() -> None:
+    """把 pid/nonce 写到状态根，插件据此握手（不依赖路径子串）。"""
+    try:
+        root = _state_root()
+        os.makedirs(root, exist_ok=True)
+        with open(os.path.join(root, "server.identity.json"), "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "nonce": NONCE, "version": VERSION,
+                       "cases_path": CASES_PATH, "state_root": root}, f)
+    except Exception:                                      # noqa: BLE001
+        pass
+
 CASES_PATH = os.environ.get("FUSION_CASES") or CL.DEFAULT_CASES_PATH
 JOBS_DIR = os.environ.get("FUSION_JOBS") or os.path.join(_HERE, "jobs")
 UPLOAD_DIR = os.environ.get("FUSION_UPLOADS") or os.path.join(_HERE, "uploads")
@@ -316,7 +344,7 @@ def cancel_job(job_id: str):
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(404, f"unknown job {job_id}")
-    if job["status"] in ("done", "failed", "cancelled"):
+    if job["status"] in ("done", "failed", "cancelled", "cancelling"):
         return {"job_id": job_id, "status": job["status"], "cancelled": False}
     job["cancelled"] = True
     if job["status"] == "queued":
@@ -551,7 +579,9 @@ def config_veto(req: VetoRequest):
 @app.get("/health")
 def health():
     return {"status": "ok", "jobs": {jid: j["status"] for jid, j in JOBS.items()},
-            "cases_path": CASES_PATH, "config": CFG.summary()}
+            "cases_path": CASES_PATH, "config": CFG.summary(),
+            "version": VERSION, "pid": os.getpid(), "nonce": NONCE,
+            "state_root": _state_root()}
 
 
 # --------------------------------------------------------------------------- #
@@ -1080,7 +1110,47 @@ def _trigger_engine_warmup(video: str, wdir: str):
                              wdir)
 
 
+def _acquire_singleton() -> None:
+    """P1-12：同一状态根只允许一个后端（pidfile + flock），避免双开抢端口/双写。"""
+    try:
+        import fcntl
+    except ImportError:                                    # 非 POSIX：跳过
+        return
+    root = _state_root()
+    os.makedirs(root, exist_ok=True)
+    path = os.path.join(root, "server.pid")
+    fh = open(path, "a+")          # 不截断：锁失败时还能读到持有者的 pid
+    fh.seek(0)
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.seek(0)
+        old = fh.read().strip()
+        print(f"[fatal] 已有后端在跑（pid={old or '?'}，lock={path}）。"
+              f"先停掉它或用 VTL_STATE_DIR 换一个状态根。", file=sys.stderr, flush=True)
+        raise SystemExit(2)
+    fh.seek(0); fh.truncate(); fh.write(str(os.getpid()))
+    fh.flush()
+    globals()["_SINGLETON_FH"] = fh                      # 持有句柄，进程退出才释放
+
+
+@app.post("/shutdown")
+def shutdown(request: Request):
+    """P1-12：让持有 pidfile 的进程自己退出（插件升级/重启时用）。"""
+    _csrf_ok(request)
+    import threading as _t
+
+    def _bye():
+        time.sleep(0.2)
+        os._exit(0)
+
+    _t.Thread(target=_bye, daemon=True).start()
+    return {"status": "shutting-down", "pid": os.getpid()}
+
+
 def main(argv=None):
+    _acquire_singleton()
+    _write_identity()
     if ENV_FILE_LOADED:
         print(f"[env] loaded {ENV_FILE_LOADED}", flush=True)
     ap = argparse.ArgumentParser(description="video-retrieval agent service")
