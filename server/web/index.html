@@ -181,6 +181,11 @@
       <label><input type="radio" name="mode" value="auto" checked>智能体(自动)</label>
       <label><input type="radio" name="mode" value="deterministic">确定性流水线</label>
     </div>
+    <div class="modes" id="profile-row" title="预算档位: 决定扫描步长/分辨率/候选上限">
+      <label><input type="radio" name="profile" value="fast" checked>⚡快速 <small id="prof-fast-note"></small></label>
+      <label><input type="radio" name="profile" value="standard">标准</label>
+      <label><input type="radio" name="profile" value="deep">🔬深度<small> (≤5min视频)</small></label>
+    </div>
     <div style="margin:auto 12px 10px;color:var(--dim);font-size:11px" id="video-note"></div>
   </div>
 
@@ -238,6 +243,8 @@
       <label>当前</label><span id="set-zhipu-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
       <label>DashScope key(兜底)</label><input id="set-dash" type="password" placeholder="留空=不修改">
       <label>当前</label><span id="set-dash-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
+      <label>OpenRouter key(ox-alpha 试用)</label><input id="set-ox" type="password" placeholder="留空=不修改">
+      <label>当前</label><span id="set-ox-cur" class="mono" style="color:var(--dim);font-size:11.5px">…</span>
     </div>
     <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
       <button class="mini" id="btn-save-settings" style="background:var(--acc);color:#06101f;font-weight:600">保存设置</button>
@@ -502,6 +509,22 @@ $("btn-search").onclick=async()=>{
   if(!state.video){agentNote("请先在左栏选择/载入视频。");return;}
   if(!q && !state.ref){agentNote("请输入检索描述,或用 📎 附加参考图。");return;}
   if(running){agentNote("已有检索在执行,稍候…");return;}
+  // W1 预算红线: 车牌/证件号查询即时拦截(不启动任务),给替代建议
+  const _plateRe=/(京\s*[A-Z][A-Z0-9]{4,6})|\b([A-Z][A-Z0-9]{4,6}\d[A-Z0-9]*)\b|\b([A-Z]\d[A-Z0-9]{3,5})\b/;
+  const _idRe=/\b\d{17}[\dXx]\b/;
+  if(q && !state.ref && (q.match(_plateRe)||q.match(_idRe)||/(车牌|牌号|号牌|身份证|证件号|license plate)/i.test(q))){
+    const box=document.createElement("div");box.className="msg agent note";
+    box.innerHTML=`🚫 全片车牌/证件号检索已按时长预算移除(实测超红线 8 倍)。<br>`+
+      `建议改用<b>外观描述</b>:如「白色皮卡车」「黑色轿车」「红衣女子」——命中片段内可人工读取车牌。`+
+      `<div style="margin-top:6px">试试: `+
+      `<button class="mini" data-q="白色皮卡车">白色皮卡车</button> `+
+      `<button class="mini" data-q="黑色轿车">黑色轿车</button> `+
+      `<button class="mini" data-q="穿红色外套的女性">穿红色外套的女性</button></div>`;
+    box.querySelectorAll("button[data-q]").forEach(b=>b.onclick=()=>{
+      $("chat-input").value=b.dataset.q;$("chat-input").focus();});
+    $("chat-log").appendChild(box);scrollChat();
+    return;
+  }
   running=true;$("btn-search").disabled=true;
   const mode=document.querySelector('input[name=mode]:checked').value;
   addMsg("user",q||"(以图搜人)",state.ref?{img:`/video/file?path=${encodeURIComponent(state.ref)}`}:{});
@@ -524,12 +547,34 @@ $("btn-search").onclick=async()=>{
   try{
     const {job_id}=await jfetch("/search",{method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({video:state.video,query:q,ref,mode})});
+      body:JSON.stringify({video:state.video,query:q,ref,mode,
+        profile:(document.querySelector('input[name=profile]:checked')||{}).value||"fast"})});
+    try{localStorage.setItem("vr_last_job",JSON.stringify({job_id:job_id}))}catch(_){}
+    if(window.__vrPipe){const qc=document.getElementById("vrpipe-chip");
+      if(qc)qc.textContent="排队中…";}
     const es=new EventSource(`/search/${job_id}/events`);
     let esClosed=false;
+    let doneRendered=false;                       // W-fix: 渲染幂等
+    const doFinish=(res)=>{                       // SSE 与轮询只有一方会真正渲染
+      if(doneRendered)return;doneRendered=true;
+      clearInterval(pollRef);
+      if(!esClosed)es.close();
+      finish(res,job_id);
+    };
+    // W-fix 兜底轮询: SSE 静默断开(页面刷新/网络抖动)时 job_done 永不到达,
+    // 结果就"永远不显示"。轮询 20s 一次, 完成即渲染(幂等)。
+    const pollRef=setInterval(async()=>{
+      if(esClosed||doneRendered){clearInterval(pollRef);return;}
+      try{
+        const d=await jfetch("/search/"+job_id);
+        if(d.status==="done")doFinish(d.result||{verdict:"no_hit",intervals:[]});
+        else if(d.status==="failed")doFinish({verdict:"no_hit",intervals:[],error:"failed"});
+      }catch(_){}
+    },20000);
     cancelBtn.onclick=async()=>{
       if(esClosed)return;
-      esClosed=true;es.close();
+      esClosed=true;es.close();clearInterval(pollRef);
+      if(window.__vrPipe)window.__vrPipe.event({type:"job_done",status:"cancelled"});
       try{await jfetch(`/search/${job_id}/cancel`,{method:"POST"});}catch(_){}
       if(pend){pend.remove();pend=null;}
       line("✕ 已取消任务","bad");
@@ -537,7 +582,12 @@ $("btn-search").onclick=async()=>{
     };
     es.onmessage=(m)=>{
       const e=JSON.parse(m.data);
+      if(window.__vrPipe)window.__vrPipe.event(e);   // pipeline panel tap
       if(e.type==="start")line(`▸ 任务 ${job_id.slice(0,8)} 开始`,"info");
+      else if(e.type==="unsupported"){
+        line(`🚫 ${e.msg}`,"bad");
+        line(`💡 建议: 改用外观描述,如「白色皮卡车」「黑色轿车」;命中片段内可人工读取车牌。`,"info");
+        if(window.__vrPipe)window.__vrPipe.event({type:"job_done",status:"done"});}
       else if(e.type==="note")line(`ℹ ${e.msg}`,"info");
       else if(e.type==="engine")line(`⚙ ${e.line}`,null);
       else if(e.type==="step")line(
@@ -548,7 +598,7 @@ $("btn-search").onclick=async()=>{
       else if(e.type==="case")line(`◈ 疑难案例 ${e.case_id}`,"info");
       else if(e.type==="final")line(`◈ 判定: ${e.verdict}`,"info");
       else if(e.type==="job_done"){if(pend){pend.remove();pend=null;}
-        es.close();finish(e.result,job_id);}
+        es.close();doFinish(e.result||{verdict:"no_hit",intervals:[]});}
       if(e.type!=="job_done")pendLine("⏳ 执行中…");
     };
     es.onerror=()=>{};
@@ -662,6 +712,7 @@ async function loadConfig(){
     $("set-key-cur").textContent=s.llm_api_key_masked||"(未配置)";
     $("set-zhipu-cur").textContent=s.zhipuai_api_key_masked||"(未配置)";
     $("set-dash-cur").textContent=s.dashscope_api_key_masked||"(未配置)";
+    $("set-ox-cur").textContent=s.oxalpha_api_key_masked||"(未配置)";
     $("set-note").textContent=`保存即生效并写入 ${s.env_file}`;
   }catch(e){$("config-body").textContent="加载失败: "+e.message;}
 }
@@ -671,9 +722,10 @@ $("btn-save-settings").onclick=async()=>{
   if($("set-key").value.trim())body.llm_api_key=$("set-key").value.trim();
   if($("set-zhipu").value.trim())body.zhipuai_api_key=$("set-zhipu").value.trim();
   if($("set-dash").value.trim())body.dashscope_api_key=$("set-dash").value.trim();
+  if($("set-ox").value.trim())body.oxalpha_api_key=$("set-ox").value.trim();
   try{await jfetch("/settings",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    toast("设置已保存并生效 ✓");$("set-key").value="";$("set-zhipu").value="";$("set-dash").value="";
+    toast("设置已保存并生效 ✓");$("set-key").value="";$("set-zhipu").value="";$("set-dash").value="";$("set-ox").value="";
     loadConfig();
   }catch(e){toast("保存失败: "+e.message);}
 };
@@ -720,6 +772,358 @@ async function postConfirm(caseId,gt){
     toast(Object.keys(gt).length?"已确认 — 成为演化层养料 ✓":"已否认 — 案例记入演化层");
     if($("tab-cases").classList.contains("on"))loadCases();
   }catch(e){toast("确认失败: "+e.message);}}
+
+  // W-fix: 页面刷新/断线后恢复最近任务的结果或监控
+  function recoverLastJob(){
+    var saved=null;try{saved=JSON.parse(localStorage.getItem("vr_last_job")||"null")}catch(_){}
+    if(!saved||!saved.job_id)return;
+    jfetch("/search/"+saved.job_id).then(function(d){
+      try{
+        if((d.status==="running"||d.status==="queued")&&!running){
+          running=true;$("btn-search").disabled=true;
+          var box=document.createElement("div");box.className="runbox";
+          box.innerHTML='<div class="t"><span>🔍 恢复监控任务 '+saved.job_id.slice(0,8)+'</span></div>';
+          $("chat-log").appendChild(box);scrollChat();
+          var es=new EventSource("/search/"+saved.job_id+"/events");
+          es.onmessage=function(m){var e=JSON.parse(m.data);
+            if(window.__vrPipe)window.__vrPipe.event(e);
+            if(e.type==="job_done"){es.close();
+              box.querySelector(".t").innerHTML="<span>✓ 恢复的任务已完成</span>";
+              if(e.result)renderResults(e.result,saved.job_id);
+              running=false;$("btn-search").disabled=false;}};
+        }else if(d.status==="done"&&d.result&&d.result.verdict&&!running){
+          renderResults(d.result,saved.job_id);
+          var box=document.createElement("div");box.className="finalcard "+(d.result.verdict==="hit"?"hit":"miss");
+          box.innerHTML='<div class="verdict '+d.result.verdict+'">'+(d.result.verdict==="hit"?"✅ 命中":"⚠️ 已完成")+
+            '</div><div class="meta">刷新前完成的任务 · 结果已渲染到右栏</div>';
+          $("chat-log").appendChild(box);scrollChat();
+        }
+        localStorage.removeItem("vr_last_job");
+      }catch(_){}
+    }).catch(function(){});
+  }
+  recoverLastJob();
+</script>
+<!-- ================= Pipeline 实时可视化 v2 (执行轨迹驱动, 全动态) ================= -->
+<style>
+#vrpipe{position:fixed;left:0;right:0;bottom:0;z-index:900;background:var(--bg);
+  border-top:1px solid var(--line,#d8dbe2);box-shadow:0 -6px 18px rgba(0,0,0,.08);
+  font-size:12px;transition:height .18s ease;overflow:hidden}
+#vrpipe.min{height:34px}
+#vrpipe.full{height:230px}
+#vrpipe-bar{height:34px;display:flex;align-items:center;gap:10px;padding:0 14px;cursor:pointer;user-select:none}
+#vrpipe-bar .t{font-weight:600;color:var(--fg)}
+#vrpipe-chip{padding:1px 9px;border-radius:9px;font-size:11px;background:#eef0f4;color:#5b6270}
+#vrpipe-chip.run{background:#e8f1ff;color:#1a6dff}
+#vrpipe-chip.ok{background:#e6f7ec;color:#0f9d58}
+#vrpipe-chip.bad{background:#fdecec;color:#d93025}
+#vrpipe-hint{color:var(--dim);font-size:11px;margin-left:auto}
+#vrpipe-body{position:relative;height:calc(100% - 34px);overflow:auto;padding:8px 14px 10px}
+#vrpipe-canvas{position:relative;height:100%}
+#vrpipe-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#vrpipe-svg path{fill:none;stroke:#c3c9d4;stroke-width:1.6}
+#vrpipe-svg path.on{stroke:#1a6dff;stroke-dasharray:6 5;animation:vrflow .7s linear infinite}
+#vrpipe-svg path.ok{stroke:#0f9d58}
+@keyframes vrflow{to{stroke-dashoffset:-11}}
+.vrnode{position:absolute;width:158px;background:#fff;border:1px solid #dfe3ea;border-radius:10px;
+  padding:7px 9px 6px;box-shadow:0 1px 4px rgba(16,24,40,.06);transition:border-color .15s, box-shadow .15s}
+.vrnode .h{display:flex;align-items:center;gap:6px;font-weight:600;color:#20242c}
+.vrnode .ic{font-size:13px}
+.vrnode .dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:#cfd4dd;flex:none}
+.vrnode.run{border-color:#1a6dff;box-shadow:0 0 0 2px rgba(26,109,255,.15)}
+.vrnode.run .dot{background:#1a6dff;animation:vrblink 1s ease infinite}
+.vrnode.done .dot{background:#0f9d58}
+.vrnode.failed{border-color:#d93025;box-shadow:0 0 0 2px rgba(217,48,37,.12)}
+.vrnode.failed .dot{background:#d93025}
+.vrnode.skip{opacity:.55}
+.vrnode.skip .dot{background:#cfd4dd}
+@keyframes vrblink{50%{opacity:.25}}
+.vrnode .m{display:inline-block;margin-top:5px;padding:1px 7px;border-radius:8px;font-size:10px;
+  background:#eef3ff;color:#2456c4;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vrnode .d{margin-top:4px;font-size:10.5px;color:#5b6270;line-height:1.35;word-break:break-all;
+  max-height:30px;overflow:hidden}
+.vrnode .bbar{margin-top:4px;height:3px;background:#e8eaf0;border-radius:2px;overflow:hidden}
+.vrnode .bbar i{display:block;height:100%;width:0;background:#0f9d58;transition:width .3s}
+.vrnode .bbar i.warn{background:#e6b800}
+.vrnode .bbar i.over{background:#d93025}
+.vrchip{display:inline-block;margin:5px 3px 0 0;padding:1px 7px;border-radius:8px;font-size:10px;
+  background:#f1f3f7;color:#5b6270;border:1px solid transparent}
+.vrchip.on{background:#e6f7ec;color:#0f9d58;border-color:#bfe8cf}
+.vrchip.fire{background:#e8f1ff;color:#1a6dff;border-color:#bcd6ff}
+.vrchip.no{background:#fdecec;color:#d93025}
+#vrpop{position:absolute;bottom:8px;left:14px;max-width:640px;max-height:150px;overflow:auto;
+  background:#111827;color:#d7dde8;border-radius:10px;padding:9px 12px;font-size:11px;
+  font-family:ui-monospace,Menlo,monospace;line-height:1.5;z-index:20;display:none;
+  box-shadow:0 8px 24px rgba(0,0,0,.35)}
+#vrpop .t{color:#8ab4ff;font-weight:600;margin-bottom:4px}
+#vrpop .ln2{white-space:pre-wrap;word-break:break-all;border-bottom:1px solid #1f2937;padding:1px 0}
+.vrnode{cursor:pointer}
+</style>
+<div id="vrpipe" class="min">
+  <div id="vrpipe-bar">
+    <span class="t">⇉ 检索流水线</span>
+    <span id="vrpipe-chip">空闲</span>
+    <span id="vrpipe-job" style="color:var(--dim);font-size:11px"></span>
+    <span id="vrpipe-hint">点击展开/收起 · 节点随实际执行动态生成</span>
+  </div>
+  <div id="vrpipe-body"><div id="vrpipe-canvas">
+    <svg id="vrpipe-svg"></svg>
+  </div></div>
+</div>
+<script>
+(function(){
+  var NS="http://www.w3.org/2000/svg";
+  // 每个真实 dispatch 一个节点; 工具→图标/标题/模型徽章
+  var TOOL_META={
+    input_dyn:{ic:"🎬",t:"视频输入",m:"本地文件 · 不出本机"},
+    preflight:{ic:"🛠",t:"解码预检",m:"OpenCV / ffmpeg",b:"ground"},
+    router:{ic:"🧭",t:"任务路由",m:"规则 + LLM",b:null},
+    ground:{ic:"☁",t:"云端粗筛",m:"云 VLM",b:"ground"},
+    locate:{ic:"🎯",t:"定位跟踪",m:"YOLO-World + BoT-SORT",b:"scan"},
+    fusion_run:{ic:"🧩",t:"融合检索",m:"YOLO-World+OSNet+VLM+WeVisOne",b:"scan"},
+    person_search:{ic:"🧑",t:"以图搜人",m:"OSNet/ArcFace + 多信号",b:"verify"},
+    verify_target:{ic:"🔍",t:"候选核验",m:"VLM + WeVisOne-VL-2B",b:"verify"},
+    fast_plate_scan:{ic:"🔤",t:"全片 OCR",m:"PP-OCRv4 + tesseract",b:"scan"},
+    rescoring:{ic:"🔁",t:"重评分",m:"投票阈值重判",b:null}
+  };
+  var nodes=[];                 // {id,tool,el,attempt}
+  var pathEls=[];               // linear chain edges
+  var dots=[];                  // particles per edge
+  var budget=null,timer=null,jobT0=0;
+  var W=176,NH=66;
+  var canvas=document.getElementById("vrpipe-canvas");
+  var svg=document.getElementById("vrpipe-svg");
+  var pop=document.createElement("div");pop.id="vrpop";pop.style.display="none";
+  canvas.appendChild(pop);
+  document.addEventListener("click",function(ev){
+    if(pop.style.display==="block"&&!pop.contains(ev.target)&&!ev.target.closest(".vrnode"))
+      pop.style.display="none";});
+  // W-fix: 面板抬起时主界面自动让位(上移), 保证对话框/最新信息可见
+  function applyLayout(){
+    var p=document.getElementById("vrpipe");
+    var h=(p&&p.className==="full")?250:34;
+    var m=document.getElementById("tab-search");
+    if(m&&m.classList.contains("on"))m.style.paddingBottom=h+"px";
+  }
+  document.getElementById("vrpipe-bar").onclick=function(){
+    var p=document.getElementById("vrpipe");
+    p.className=p.className==="min"?"full":"min";
+    applyLayout();draw();};
+  (function(){ // 只在检索工作台显示
+    function show(on){document.getElementById("vrpipe").style.display=on?"":"none";}
+    var tabs=document.querySelectorAll("header nav button[data-tab]");
+    tabs.forEach(function(b){b.addEventListener("click",function(){show(b.dataset.tab==="search");});});
+    var m=document.getElementById("tab-search");show(m&&m.classList.contains("on"));applyLayout();
+  })();
+
+  function addNode(tool,attempt,label){
+    var meta=TOOL_META[tool]||{ic:"⚙",t:tool,m:"引擎"};
+    var id="vrn-"+nodes.length;
+    var el=document.createElement("div");el.className="vrnode";el.id=id;
+    el.style.left=(nodes.length*W+10)+"px";el.style.top="30px";
+    var t=meta.t+(attempt>1?" #"+attempt:"");
+    el.innerHTML='<div class="h"><span class="ic">'+meta.ic+'</span>'+t+
+      '<span class="dot"></span></div><span class="m">'+(meta.m||"")+
+      '</span><div class="d"></div><div class="bbar"><i style="width:0"></i></div>';
+    el.title="点击查看流经本节点的实时数据";
+    var node={id:id,tool:tool,attempt:attempt||1,el:el,hist:[],state:"idle"};
+    el.addEventListener("click",function(ev){ev.stopPropagation();showPop(node);});
+    canvas.appendChild(el);nodes.push(node);
+    canvas.style.minWidth=(nodes.length*W+80)+"px";
+    // 新边: 前一节点 → 本节点
+    if(nodes.length>1){
+      var p=document.createElementNS(NS,"path");svg.appendChild(p);pathEls.push(p);
+      var c1=document.createElementNS(NS,"circle");c1.setAttribute("r",2.6);c1.setAttribute("opacity",0);svg.appendChild(c1);
+      var c2=document.createElementNS(NS,"circle");c2.setAttribute("r",2.6);c2.setAttribute("opacity",0);svg.appendChild(c2);
+      dots.push({key:pathEls.length-1,els:[c1,c2],off:[Math.random(),Math.random()],speed:0.006+Math.random()*0.004});
+    }
+    draw();return node;
+  }
+  function pathFor(i){return pathEls[i-1];}   // edge into node i
+  function draw(){
+    nodes.forEach(function(n,i){
+      var el=n.el;el.style.left=(i*W+10)+"px";
+      if(i>0){
+        var a=nodes[i-1],x1=i*W+10-W+158,y1=30+NH/2,x2=i*W+10,y2=30+NH/2,mx=(x1+x2)/2;
+        var p=pathFor(i);
+        var cls=(n.state==="run"&&(a.state==="done"||a.state==="run"))?"on":
+                (a.state==="done"&&n.state==="done")?"ok":"";
+        p.setAttribute("d","M"+x1+","+y1+" C"+mx+","+y1+" "+mx+","+y2+" "+x2+","+y2);
+        p.setAttribute("class",cls);
+      }
+    });
+  }
+  // 粒子流: 边按 (源态,目标态) 着色, 空闲慢灰 / 运行蓝快 / 完成绿
+  (function tick(){
+    dots.forEach(function(d,i){
+      var p=pathEls[i],n=nodes[i+1],a=nodes[i];if(!p||!n)return;
+      var cls=p.getAttribute("class");
+      var mode=cls==="on"?1:cls==="ok"?0.5:0.16;
+      var col=cls==="on"?"#1a6dff":cls==="ok"?"#0f9d58":"#9aa0ab";
+      var op=cls==="on"?1:cls==="ok"?0.55:0.2;
+      d.els.forEach(function(c,k){
+        try{
+          d.off[k]=(d.off[k]+d.speed*mode*(k?1.12:1))%1;
+          var L=p.getTotalLength();var pt=p.getPointAtLength(d.off[k]*L);
+          c.setAttribute("cx",pt.x);c.setAttribute("cy",pt.y);
+          c.setAttribute("fill",col);c.setAttribute("opacity",op);
+        }catch(_){}
+      });
+    });
+    requestAnimationFrame(tick);
+  })();
+  function setState(i,st){
+    var n=nodes[i];if(!n)return;n.state=st;n.el.className="vrnode "+st;draw();
+  }
+  function detail(i,txt){
+    var n=nodes[i];if(!n)return "";
+    if(txt===undefined)return n.el.querySelector(".d").textContent;
+    var line=String(txt).slice(0,200);
+    n.el.querySelector(".d").textContent=line.slice(0,160);
+    n.hist.push(line);if(n.hist.length>60)n.hist.shift();
+    return line;
+  }
+  function chipSet(id,cls,txt){var el=document.getElementById(id);
+    if(el){if(cls!==null)el.className=cls;if(txt!==undefined)el.textContent=txt;}}
+  function setStatus(cls,txt){var c=document.getElementById("vrpipe-chip");
+    c.className=cls;c.textContent=txt;}
+  function setBar(i,sec){
+    var n=nodes[i];if(!n)return;var bar=n.el.querySelector(".bbar i");if(!bar)return;
+    var lim=budgetFor(n.tool);
+    if(!lim){bar.style.width="0";return;}
+    var pct=Math.min(100,Math.round(sec/lim*100));
+    bar.style.width=pct+"%";bar.className=pct>=100?"over":pct>=70?"warn":"";
+  }
+  function budgetFor(tool){
+    if(!budget)return null;var sb=budget.stage_budgets||{};
+    var map={preflight:30,router:30,ground:sb.ground_s,locate:sb.scan_s,
+      fusion_run:sb.scan_s,fast_plate_scan:sb.scan_s,
+      person_search:sb.verify_s,verify_target:sb.verify_s};
+    return map[tool]||budget.budget_s;
+  }
+  function showPop(n){
+    if(pop.dataset.node===n.id&&pop.style.display!=="none"){pop.style.display="none";return;}
+    pop.dataset.node=n.id;
+    pop.innerHTML='<div class="t">'+n.el.querySelector(".ic").textContent+" "+n.tool+
+      " #"+n.attempt+" · 流经数据 ("+n.hist.length+')</div>'+
+      (n.hist.length?n.hist.map(function(l){return '<div class="ln2">'+
+        l.replace(/&/g,"&amp;").replace(/</g,"&lt;")+'</div>'}).join("")
+        :'<div class="ln2" style="color:#6b7280">(暂无)</div>');
+    pop.style.display="block";pop.scrollTop=pop.scrollHeight;
+  }
+  function reset(){
+    nodes.forEach(function(n){n.el.remove();});pathEls.forEach(function(p){p.remove();});
+    dots.forEach(function(d){d.els.forEach(function(c){c.remove();});});
+    nodes=[];pathEls=[];dots=[];pop.style.display="none";budget=null;
+    canvas.style.minWidth="";draw();
+  }
+  // dispatch 计数 → attempt 编号 + 动态节点
+  var seen={};
+  function nodeForTool(tool,attempt){
+    var n=attempt>1?addNode(tool,attempt):null;
+    if(n)return n;
+    // 首次出现复用既有节点
+    for(var i=nodes.length-1;i>=0;i--)if(nodes[i].tool===tool)return nodes[i];
+    return addNode(tool,1);
+  }
+  var curNode=-1;                    // engine 行归属的节点
+  function parseSched(text){
+    var m=(text||"").match(/调度:\s*(\w+)\s*档\s*·\s*视频\s*([\d.]+)s\s*·\s*预算\s*([\d.]+)s/);
+    if(!m)return false;
+    budget={mode:m[1],duration_s:+m[2],budget_s:+m[3],stage_budgets:{
+      ground_s:Math.min(120,budget_s_f(m,3)*.15),
+      scan_s:budget_s_f(m,3)*.4,verify_s:budget_s_f(m,3)*.25}};
+    var c=document.getElementById("vrpipe-job");
+    c.textContent=(c.textContent||"")+" · "+m[1]+"档";
+    return true;
+  }
+  function budget_s_f(m,i){return +m[i];}
+  function onEvent(e){
+    if(e.type==="start"){
+      reset();setStatus("run","运行中");
+      document.getElementById("vrpipe-job").textContent=(e.job_id||"").slice(0,8);
+      var n=addNode("input_dyn",1);n.tool="input_dyn";
+      n.el.querySelector(".ic").textContent="🎬";
+      n.el.querySelector(".m").textContent="本地文件 · 不出本机";
+      detail(nodes.length-1,"query: "+(e.query||"")+" | ref: "+(e.ref?"有":"无"));
+      setState(nodes.length-1,"done");
+      jobT0=Date.now();
+      if(timer)clearInterval(timer);
+      timer=setInterval(function(){
+        var c=document.getElementById("vrpipe-chip");
+        if(c.className!=="run")return;
+        var el=Math.round((Date.now()-jobT0)/1000);
+        c.textContent="运行中 · "+Math.floor(el/60)+":"+String(el%60).padStart(2,"0");
+      },1000);
+      draw();return;
+    }
+    // 引擎行实时到达(带 tool) → 派发即建节点并置 run, 运行阶段全程可见
+    if(e.type==="engine"){
+      var rn=ensureRunning(e.tool);
+      curNode=nodes.indexOf(rn);
+      var ln=e.line||"";
+      if(parseSched(ln))return draw();
+      detail(curNode,ln.trim().slice(0,200));
+      if(/\[done\]/.test(ln)&&nodes[curNode].state==="run")setState(curNode,"done");
+      draw();return;
+    }
+    if(e.type==="note"){if(parseSched(e.msg||""))return;
+      if(curNode>=0)detail(curNode,e.msg||"");return;}
+    if(e.type!=="step")return final_(e);
+    // A1 拦截的重试派发: 不建新节点, 挂到该工具最近节点为证据
+    if(e.status==="failed"&&/重试预算/.test(e.error||"")){
+      for(var j=nodes.length-1;j>=0;j--)if(nodes[j].tool===e.tool){
+        detail(j,"⛔ "+(e.error||"").slice(0,120));break;}
+      return draw();
+    }
+    // 完成事件: 找到运行中的同工具节点标 done/failed
+    var idx=-1;
+    for(var i=nodes.length-1;i>=0;i--)if(nodes[i].tool===e.tool&&nodes[i].state==="run"){idx=i;break;}
+    if(idx<0){ // 无引擎行的工具(如 router inproc) → 建节点
+      seen[e.tool]=(seen[e.tool]||0)+1;
+      var nn=addNode(e.tool,seen[e.tool]);idx=nodes.indexOf(nn);setState(idx,"run");
+    }
+    setState(idx,e.status==="ok"?"done":e.status==="failed"?"failed":"run");
+    curNode=idx;
+    if(e.duration_s!=null){detail(idx,e.tool+" "+e.duration_s+"s");
+      if(e.status==="ok")setBar(idx,e.duration_s);}
+    if(e.summary&&e.tool==="router")detail(idx,JSON.stringify(e.summary).slice(0,120));
+    draw();return;
+  }
+  function ensureRunning(tool){
+    for(var i=nodes.length-1;i>=0;i--)if(nodes[i].tool===tool&&nodes[i].state==="run")return nodes[i];
+    seen[tool]=(seen[tool]||0)+1;
+    var n=addNode(tool,seen[tool]);setState(nodes.indexOf(n),"run");
+    return n;
+  }
+  function branchOf(s){return s&&s.branch;}
+  function final_(e){
+    if(timer){clearInterval(timer);timer=null;}
+    if(e.type==="final"){
+      nodes.forEach(function(n,i){if(n.state==="run")setState(i,"done");});
+      var v=document.createElement("div");v.className="vrnode done";v.id="vrn-final";
+      v.style.left=(nodes.length*W+10)+"px";v.style.top="30px";
+      v.innerHTML='<div class="h"><span class="ic">📤</span>判定<span class="dot"></span></div>'+
+        '<span class="m">verdict</span><div class="d">'+e.verdict+'</div>';
+      canvas.appendChild(v);nodes.push({id:"vrn-final",tool:"final",el:v,hist:[],state:"done"});
+      draw();
+      setStatus(e.verdict==="hit"?"ok":"ok","完成 · "+e.verdict);
+    }else if(e.type==="job_done"){
+      if(e.status==="failed"){setStatus("bad","失败");
+        nodes.forEach(function(n,i){if(n.state==="run")setState(i,"failed");});}
+      else if(e.status==="cancelled"){setStatus("","已取消");
+        nodes.forEach(function(n,i){if(n.state==="run")setState(i,"skip");});}
+      else if(e.status==="done"){
+        nodes.forEach(function(n,i){if(n.state==="run")setState(i,"done");});
+        if(!document.getElementById("vrn-final"))setStatus("ok","完成");}
+      draw();
+    }
+  }
+  window.__vrPipe={event:onEvent,draw:draw,
+    reset:function(){reset();setStatus("","空闲");}};
+  window.addEventListener("resize",draw);
+  setTimeout(draw,60);
+})();
 </script>
 </body>
 </html>

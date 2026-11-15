@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 
-		const CONSOLE_URL = "http://127.0.0.1:8788/";
+		const CONSOLE_URL = "http://127.0.0.1:8788/?v=2";  // cache-bust: Electron heuristic cache kept the pre-pipeline-panel page alive for days
 		const PRESET_ID = "video-retrieval";
 		const EVT = "vr-console";
 
@@ -170,8 +170,14 @@ window.__ModuleLoader__.load({
 			}, "视频检索");
 		}
 
+		// Cordis service dependency. dsh >= 0.1.5 requires the declared 'slots'
+		// inject: without it apply() runs before the slots service is provided,
+		// ctx.get("slots") is undefined, and this plugin silently registers no
+		// UI (the console overlay and the 视频检索 sidebar button both vanish).
+		const inject = ["slots"];
+
 		function apply(ctx) {
-			const slots = ctx.get("slots");
+			const slots = ctx.get("slots") || ctx.slots;
 			if (slots === void 0) return;
 			slots.inject("shell.overlay", function () {
 				return slots.register({ name: "shell.overlay", id: "vr-console" }, ConsoleOverlay);
@@ -181,6 +187,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 
+		exports.inject = inject;
 		exports.apply = apply;
 		return module.exports;
 	}
