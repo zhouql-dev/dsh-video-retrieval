@@ -1,14 +1,9 @@
 // Build the host half + validate the client half:
-//   host:  syntax-check src/index.js, then write TWO artifacts:
-//          dist/index.js            — latest copy (used by local smoke tests)
-//          dist/index.<hash8>.js    — content-hashed; the preset row points here so
-//                                     each deploy is a NEW module URL (the Cordis
-//                                     loader caches plugins by file URL per process —
-//                                     re-deploying to the same path would keep
-//                                     serving stale code until a dsh restart).
+//   host:  syntax-check src/index.js, then write dist/index.js.
+//          (P2-1：不再生成 dist/index.<hash8>.js —— preset 早已改用包名解析，
+//           全仓没有任何地方引用哈希产物，它们只是构建垃圾。)
 //   client: dist-client/index.js is hand-maintained (__ModuleLoader__ bundle);
 //          only syntax-checked here.
-import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,9 +23,6 @@ for (const file of [src, clientSrc]) {
 }
 
 const code = readFileSync(src, 'utf8')
-const hash = createHash('sha256').update(code).digest('hex').slice(0, 8)
-
 mkdirSync(distDir, { recursive: true })
 writeFileSync(join(distDir, 'index.js'), code)
-writeFileSync(join(distDir, `index.${hash}.js`), code)
-console.log(`built: dist/index.js + dist/index.${hash}.js  (client bundle syntax OK)`)
+console.log('built: dist/index.js  (client bundle syntax OK)')

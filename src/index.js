@@ -107,8 +107,14 @@ export async function apply(ctx, config = {}) {
         resolve({ code: -1, signal: null, stdout: '', stderr: String(err), timedOut: false })
         return
       }
-      child.stdout?.on('data', (d) => { stdout += d.toString() })
-      child.stderr?.on('data', (d) => { stderr += d.toString() })
+      // P2-6：只保留尾部 1MB，长任务（40 分钟）刷进度不再无限吃内存
+      const CAP = 1 << 20
+      const keepTail = (cur, chunk) => {
+        const t = cur + chunk
+        return t.length > CAP ? t.slice(t.length - CAP) : t
+      }
+      child.stdout?.on('data', (d) => { stdout = keepTail(stdout, d.toString()) })
+      child.stderr?.on('data', (d) => { stderr = keepTail(stderr, d.toString()) })
       child.on('error', (err) => { spawnError = String(err) })
       child.on('close', (code, sig) => {
         clearTimeout(timer)
@@ -476,7 +482,7 @@ export async function apply(ctx, config = {}) {
       if (r.status !== 200) throw new Error(`vr cases failed (HTTP ${r.status}): ${JSON.stringify(r.data)}`)
       const data = r.data
       if (args.confirmed && Array.isArray(data.cases)) {
-        data.cases = data.cases.filter((c) => c?.confirmed)
+        data.cases = data.cases.filter((c) => c?.human_confirmed)
       }
       return data
     },
