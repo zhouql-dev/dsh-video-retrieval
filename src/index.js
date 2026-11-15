@@ -72,7 +72,7 @@ export async function apply(ctx, config = {}) {
   }
 
   const BACKEND_PORT = (() => {
-    try { return new URL(cfg.backendUrl).port || '8787' } catch { return '8787' }
+    try { return new URL(cfg.backendUrl).port || '8788' } catch { return '8788' }
   })()
 
   // ── subprocess helper ─────────────────────────────────────────────────────
@@ -149,7 +149,10 @@ export async function apply(ctx, config = {}) {
     try {
       const res = await fetch(cfg.backendUrl + urlPath, {
         method,
-        headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
+        headers: {
+          'x-requested-with': 'vr-console',
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       })
@@ -519,7 +522,7 @@ export async function apply(ctx, config = {}) {
     output: { schema: { type: 'json' }, render: (_a, v) => [{ type: 'text', text: `vr evolve → ${JSON.stringify(v).slice(0, 400)}` }] },
     async execute(_args, exec) {
       await ensureBackend(exec.signal)
-      const r = await http('GET', '/evolve', undefined, { signal: exec.signal, timeoutMs: 900_000 })
+      const r = await http('POST', '/evolve', undefined, { signal: exec.signal, timeoutMs: 900_000 })
       if (r.status !== 200) throw new Error(`vr evolve failed (HTTP ${r.status}): ${JSON.stringify(r.data)}`)
       return r.data
     },

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E2 — agent service: FastAPI + uvicorn (default :8787), SSE progress,
+"""E2 — agent service: FastAPI + uvicorn (default :8788, override VTL_PORT), SSE progress,
 case confirm (evolution feed), config view, manual/watched evolution.
 
 Endpoints
@@ -45,7 +45,7 @@ import case_log as CL          # noqa: E402
 import config as CFG           # noqa: E402
 from agent.loop import Agent   # noqa: E402
 
-from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
 from fastapi.responses import FileResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
@@ -92,6 +92,45 @@ def _safe_local(path: str, what: str = "file") -> str:
         if rp == root or rp.startswith(root + os.sep):
             return rp
     raise HTTPException(403, f"{what} path not allowed")
+
+
+# P0-10：允许被配置工具改成的 base_url 主机（防止 key 被导向任意地址）
+_DEFAULT_LLM_HOSTS = {
+    "api.deepseek.com", "dashscope.aliyuncs.com", "open.bigmodel.cn",
+    "api.zhipuai.cn", "openrouter.ai", "127.0.0.1", "localhost",
+}
+
+
+def _allowed_llm_hosts() -> set[str]:
+    extra = (os.environ.get("VTL_ALLOWED_HOSTS") or "").strip()
+    out = set(_DEFAULT_LLM_HOSTS)
+    if extra:
+        out |= {h.strip().lower() for h in extra.split(",") if h.strip()}
+    return out
+
+
+def _assert_allowed_base_url(url: str) -> str:
+    """只允许白名单主机；空值表示恢复默认，放行。"""
+    if not url:
+        return url
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").lower()
+    if host not in _allowed_llm_hosts():
+        raise HTTPException(
+            400, f"base_url host not allowed: {host}（可用 VTL_ALLOWED_HOSTS 扩展）")
+    return url
+
+
+# P0-11：写端点只接受本站控制台发出的请求（阻断 <img src> 式的 GET/CSRF）
+def _csrf_ok(request: Request) -> None:
+    if (request.headers.get("x-requested-with") or "").lower() == "vr-console":
+        return
+    origin = request.headers.get("origin") or ""
+    host = request.headers.get("host") or ""
+    if origin and host and origin.split("://")[-1] == host:
+        return
+    raise HTTPException(
+        403, "write endpoints require header X-Requested-With: vr-console")
 
 # job registry: job_id -> {status, events:Queue, result, thread, query, video}
 JOBS: dict[str, dict] = {}
@@ -435,8 +474,9 @@ def _trigger_evolve() -> dict:
     return run_once(cases_path=CASES_PATH)
 
 
-@app.get("/evolve")
-def evolve_now():
+@app.post("/evolve")
+def evolve_now(request: Request):
+    _csrf_ok(request)
     return _trigger_evolve()
 
 
@@ -550,8 +590,9 @@ _TRANSCODE_DIR = os.path.join(JOBS_DIR, ".transcode")
 os.makedirs(_TRANSCODE_DIR, exist_ok=True)
 
 
-@app.get("/video/transcode")
-def video_transcode(path: str):
+@app.post("/video/transcode")
+def video_transcode(path: str, request: Request):
+    _csrf_ok(request)
     """Remux/transcode to a browser-safe h264+aac mp4 (cached by path hash).
     MPEG-PS/DVR containers cannot play in any browser — this is the fix."""
     import hashlib
@@ -742,6 +783,16 @@ def _run_chat_tool(name: str, args: dict) -> tuple[str, bool]:
                     "dashscope_api_key": s["dashscope_api_key_masked"] or "(未配置)",
                 }}, ensure_ascii=False), False)
     if name == "set_settings":
+        # P0-10：模型对话不放行密钥与 base_url（防 key 被导向任意地址），
+        # 这些只能在配置页由用户手动改。
+        _blocked = {k: args.get(k) for k in ("base_url", "llm_key",
+                                             "zhipu_key", "dashscope_key")
+                    if args.get(k) is not None}
+        if _blocked:
+            return (json.dumps({
+                "拒绝": "密钥与 base_url 只能在配置页（设置面板）由用户手动修改，"
+                        "对话里不允许改。",
+                "被拒字段": sorted(_blocked)}, ensure_ascii=False), False)
         updates = {}
         if args.get("base_url") is not None:
             updates["LLM_BASE_URL"] = str(args["base_url"]).strip()
@@ -889,6 +940,10 @@ def apply_settings(updates: dict) -> dict:
     Empty string clears a key. Returns the masked settings view."""
     if not updates:
         raise HTTPException(400, "no fields to update")
+    if "LLM_BASE_URL" in updates:
+        updates = dict(updates)
+        updates["LLM_BASE_URL"] = _assert_allowed_base_url(
+            str(updates["LLM_BASE_URL"]).strip())
     for k, v in updates.items():
         if v:
             os.environ[k] = v
@@ -984,7 +1039,8 @@ def _trigger_engine_warmup(video: str, wdir: str):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="video-retrieval agent service")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--port", type=int,
+                    default=int(os.environ.get("VTL_PORT", "8788")))
     ap.add_argument("--watch", type=float, default=0,
                     help="内嵌演化周期(分钟; 0=禁用. serve.sh 默认传 30)")
     ap.add_argument("--warmup", action="store_true",

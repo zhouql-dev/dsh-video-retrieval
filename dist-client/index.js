@@ -18,7 +18,9 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 
-		const CONSOLE_URL = "http://127.0.0.1:8788/?v=2";  // cache-bust: Electron heuristic cache kept the pre-pipeline-panel page alive for days
+		const CONSOLE_URL = (typeof window !== "undefined" && window.__VR_BACKEND__)
+			? window.__VR_BACKEND__ + "/?v=2"
+			: "http://127.0.0.1:8788/?v=2";  // cache-bust: Electron heuristic cache kept the pre-pipeline-panel page alive for days
 		const PRESET_ID = "video-retrieval";
 		const EVT = "vr-console";
 
