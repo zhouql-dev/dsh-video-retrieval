@@ -111,16 +111,16 @@ def active_provider() -> str:
 
 
 def has_glm() -> bool:
+    """W4b: 智谱 key —— glm-5.3-flash(x) 视频粗筛通道（与 qwen 互为备份）。
+
+    P0-12：两个键名都认（ZHIPUAI_API_KEY / GLM_API_KEY），此前这里有两个同名
+    定义，后者覆盖前者，导致只设 GLM_API_KEY 时通道永不触发。
+    """
     return bool(_glm_key())
 
 
 def has_qwen() -> bool:
     return bool(_qwen_key())
-
-
-def has_glm() -> bool:
-    """W4b: ZHIPUAI key — glm-5.3-flash(x) 视频粗筛通道 (与 qwen 互为备份)."""
-    return bool(os.environ.get("ZHIPUAI_API_KEY"))
 
 
 def has_oxalpha() -> bool:
