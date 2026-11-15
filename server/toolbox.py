@@ -28,6 +28,7 @@ import os
 import queue
 import shutil
 import subprocess
+import re
 import sys
 import threading
 import time
@@ -258,6 +259,14 @@ def _summary_from_outdir(outdir: str) -> dict:
     return s
 
 
+_ABS_PATH_RE = re.compile(r"/(?:Users|private|var|tmp|opt|home)/[\w.\-]+(?:/[\w.\-]+)*")
+
+
+def _redact(text: str) -> str:
+    """P0-15：把错误信息里的绝对路径替换成 <path>，避免回显家目录结构。"""
+    return _ABS_PATH_RE.sub("<path>", text or "")
+
+
 def dispatch(tool: str, params: dict, workdir: str | None = None,
              on_line=None) -> dict:
     """Execute a tool by name with a params dict; always returns the uniform
@@ -299,13 +308,29 @@ def dispatch(tool: str, params: dict, workdir: str | None = None,
             # reader thread: readline() blocks while the engine computes, so
             # pump lines through a queue and enforce the timeout from the poller
             q: queue.Queue = queue.Queue()
+            err_buf: list[str] = []
 
-            def _pump():
-                for line in proc.stdout:
-                    q.put(line)
-                q.put(None)                     # EOF sentinel
+            def _pump(stream, *, sentinel: bool = False, prefix: str = ""):
+                try:
+                    for line in stream:
+                        if prefix:
+                            err_buf.append(line)
+                            q.put(prefix + line)
+                        else:
+                            q.put(line)
+                finally:
+                    if sentinel:
+                        q.put(None)
 
-            threading.Thread(target=_pump, daemon=True).start()
+            threading.Thread(target=_pump, args=(proc.stdout,), kwargs={"sentinel": True},
+                             daemon=True).start()
+            # P0-6：stderr 必须同时泵出。只 pump stdout 时，子进程把 64KB 管道缓冲写满
+            # 就会阻塞、stdout 也不再产出，任务表现为"卡住→timeout"（线上 10s 的
+            # locate 会卡到 watchdog 的 20–60 分钟）。
+            err_thread = threading.Thread(
+                target=_pump, args=(proc.stderr,), kwargs={"prefix": "[err] "},
+                daemon=True)
+            err_thread.start()
             t0 = time.time()
             while True:
                 try:
@@ -319,7 +344,8 @@ def dispatch(tool: str, params: dict, workdir: str | None = None,
                     break
                 on_line(item.rstrip())
             proc.wait(timeout=max(1.0, timeout - (time.time() - t0)))
-            stdout, stderr, rc = "", proc.stderr.read(), proc.returncode
+            err_thread.join(timeout=2.0)
+            stdout, stderr, rc = "", "".join(err_buf), proc.returncode
     except subprocess.TimeoutExpired:
         return {"tool": tool, "status": "failed", "summary": {},
                 "outputs": {}, "error": f"timeout after {timeout}s", "cost": t["cost"]}
@@ -331,7 +357,7 @@ def dispatch(tool: str, params: dict, workdir: str | None = None,
                         if f.endswith((".json", ".jpg", ".png", ".mp4"))})
     summary = _summary_from_outdir(out) if out else {}
     status = "ok" if rc == 0 else "failed"
-    tail = (stderr or stdout or "")[-800:]
+    tail = _redact((stderr or stdout or "")[-800:])
     return {"tool": tool, "status": status, "summary": summary,
             "outputs": outputs,
             "error": None if status == "ok" else (tail or f"exit {rc}"),

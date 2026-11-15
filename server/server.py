@@ -59,6 +59,40 @@ UPLOAD_DIR = os.environ.get("FUSION_UPLOADS") or os.path.join(_HERE, "uploads")
 os.makedirs(JOBS_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# P0-5：上传硬上限（默认 2 GB，可用 VTL_MAX_UPLOAD_MB 覆盖）
+MAX_UPLOAD_MB = int(os.environ.get("VTL_MAX_UPLOAD_MB", "2048"))
+
+
+def _allowed_roots() -> list[str]:
+    """P0-7：允许被 /video/* 读取的根目录。
+
+    默认 = 上传目录 + job 目录 + $HOME；可用 VTL_ALLOWED_ROOTS（冒号分隔）覆盖 $HOME。
+    """
+    roots = [UPLOAD_DIR, JOBS_DIR]
+    extra = (os.environ.get("VTL_ALLOWED_ROOTS") or "").strip()
+    if extra:
+        roots += [x for x in extra.split(":") if x.strip()]
+    else:
+        roots.append(os.path.expanduser("~"))
+    out = []
+    for r in roots:
+        try:
+            out.append(os.path.realpath(r))
+        except Exception:                       # noqa: BLE001
+            continue
+    return out
+
+
+def _safe_local(path: str, what: str = "file") -> str:
+    """把外部传入的 path 解析成 realpath，并要求落在允许的根目录内。"""
+    if not path:
+        raise HTTPException(400, "missing path")
+    rp = os.path.realpath(path)
+    for root in _allowed_roots():
+        if rp == root or rp.startswith(root + os.sep):
+            return rp
+    raise HTTPException(403, f"{what} path not allowed")
+
 # job registry: job_id -> {status, events:Queue, result, thread, query, video}
 JOBS: dict[str, dict] = {}
 
@@ -181,9 +215,15 @@ def _run_job(job_id: str, req: SearchRequest):
         job["result"] = res
         job["status"] = "done"
     except Exception as e:                      # noqa: BLE001 — report, never die
+        # P0-15：对外只给异常类型 + job id，原文（常含绝对路径）只进服务日志
+        try:
+            print(f"[job {job_id}] {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        except Exception:                       # noqa: BLE001
+            pass
         job["result"] = {"verdict": "inconclusive", "intervals": [],
                          "evidence": {}, "case_id": None,
-                         "error": f"{type(e).__name__}: {e}", "artifacts": []}
+                         "error": f"{type(e).__name__} (job {job_id}, see server.log)",
+                         "artifacts": []}
         job["status"] = "failed"
     finally:
         _JOB_SEM.release()
@@ -309,9 +349,26 @@ async def search_upload(file: UploadFile = File(...)):
     The GUI then POSTs that path to /search."""
     safe = re.sub(r"[^\w.\-]+", "_", file.filename or "upload.bin")
     path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4().hex[:8]}_{safe}")
-    with open(path, "wb") as f:
-        f.write(await file.read())
-    return {"path": path, "filename": safe}
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    size = 0
+    try:
+        with open(path, "wb") as f:
+            while True:
+                chunk = await file.read(1 << 20)          # 1 MiB
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(
+                        413, f"file too large (> {MAX_UPLOAD_MB} MB)")
+                f.write(chunk)
+    except Exception:
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        finally:
+            raise
+    return {"path": path, "filename": safe, "size": size}
 
 
 @app.get("/runs/{job_id}/{path:path}")
@@ -449,8 +506,9 @@ def _probe_container(path: str) -> str | None:
 def video_info(path: str):
     """cv2 probe: duration / fps / frames / resolution + REAL container."""
     import cv2
-    if not path or not os.path.exists(path) or not os.path.isfile(path):
-        raise HTTPException(404, f"video not found: {path}")
+    path = _safe_local(path, "video")
+    if not os.path.isfile(path):
+        raise HTTPException(404, "video not found")
     cap = cv2.VideoCapture(path)
     try:
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
@@ -475,7 +533,8 @@ def video_info(path: str):
 def video_file(path: str):
     """Stream a local video OR image to THIS browser (localhost only; the file
     never leaves the machine — playback source for the panels + ref thumbnails)."""
-    ext = os.path.splitext(path or "")[1].lower()
+    path = _safe_local(path, "video")
+    ext = os.path.splitext(path)[1].lower()
     if ext not in _VIDEO_EXTS and ext not in _IMAGE_EXTS:
         raise HTTPException(404, "not a playable local file")
     if not os.path.isfile(path):
@@ -497,14 +556,15 @@ def video_transcode(path: str):
     MPEG-PS/DVR containers cannot play in any browser — this is the fix."""
     import hashlib
     import subprocess
+    path = _safe_local(path, "video")
     if not os.path.isfile(path):
-        raise HTTPException(404, f"video not found: {path}")
+        raise HTTPException(404, "video not found")
     key = hashlib.sha1(os.path.abspath(path).encode()).hexdigest()[:16]
     out = os.path.join(_TRANSCODE_DIR, key + ".mp4")
     if os.path.exists(out):
         return {"status": "cached", "url": f"/video/transcoded?key={key}",
                 "note": "已转封装(缓存)"}
-    tmp = out[:-4] + ".part.mp4"           # keep .mp4 ext so ffmpeg infers the muxer
+    tmp = out[:-4] + f".{uuid.uuid4().hex[:8]}.part.mp4"   # 唯一 tmp，避免并发互踩
     # -c:v copy 保留画质;音频转 AAC(G711 浏览器不支持);faststart 保证可流式播放
     cmd = ["ffmpeg", "-y", "-i", path, "-map", "0:v:0", "-map", "0:a?",
            "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", tmp]
@@ -522,7 +582,7 @@ def video_transcode(path: str):
             return {"status": "failed", "error": "转封装超时(>60 分钟)"}
         if r2.returncode != 0:
             return {"status": "failed",
-                    "error": (r2.stderr or "ffmpeg failed")[-400:]}
+                    "error": "transcode failed (see server log)"}
     os.replace(tmp, out)
     return {"status": "ok", "url": f"/video/transcoded?key={key}",
             "note": "转封装完成(h264+aac, 可播放)"}
