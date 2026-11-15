@@ -37,9 +37,7 @@ from datetime import datetime, timezone
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
-for p in (_PARENT, _HERE):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import case_log as CL        # noqa: E402
 import evaluator as E       # noqa: E402
@@ -50,8 +48,8 @@ try:                                    # keep runs readable; the record has the
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 except ImportError:
     pass
-sys.path.insert(0, os.path.join(_PARENT, "bench"))
 import cycle as CYC         # noqa: E402
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 # tunables (env-overridable budgets)
 MIN_CANDIDATES = int(os.environ.get("EVOLVE_MIN_CANDIDATES", 10))
@@ -179,7 +177,6 @@ def _evolve_layer1(rows: list, seed: int) -> dict:
     # (a) CCPD-GT confusion-pair reflection (E4 export present?)
     if _ccpd_rows_available():
         try:
-            sys.path.insert(0, os.path.join(_PARENT, "bench"))
             from run_ccpd_gt import reflect_confusables, tolerant_metrics
             ccpd = json.load(open(CCPD_ROWS))
             train, hold = split_holdout(ccpd, seed=seed)

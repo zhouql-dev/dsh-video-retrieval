@@ -19,7 +19,6 @@ import numpy as np
 import cv2
 
 here = os.path.dirname(os.path.abspath(__file__))
-import sys; sys.path.insert(0, here)
 from common import cosine, pick_device, skill_root, models_dir  # noqa: E402
 
 
@@ -67,9 +66,8 @@ def _resolve_osnet():
     if os.environ.get("OSNET_WEIGHTS"):
         return os.path.expanduser(os.environ["OSNET_WEIGHTS"])
     candidates = [
+        str(models_dir() / "osnet"),          # P1-16: <repo>/models/osnet 或 ~/.video-analyst
         str(skill_root() / "weights" / "osnet"),
-        str(models_dir() / "osnet"),
-        os.path.expanduser("~/dev/video-retrieval/weights/osnet"),
     ]
     for d in candidates:
         short = os.path.join(d, "osnet_x0_25_msmt17.pth")

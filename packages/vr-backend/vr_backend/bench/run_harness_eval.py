@@ -28,9 +28,7 @@ import time
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
 _REPO = os.path.dirname(_FUSION)
-for p in (_HERE, _FUSION, os.path.join(_FUSION, "agent")):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import eval_gt as E        # noqa: E402
 

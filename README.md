@@ -112,14 +112,14 @@ npx @deepseek-ai/dsh web
 
 ## 模型权重说明
 
-插件需要以下模型权重。前三个由 `scripts/setup.sh` 从 GitHub Releases 下载到包内 `weights/`；insightface 模型由库自动下载到 `~/.insightface/`。
+插件需要以下模型权重。前三个由 `scripts/setup.sh` 从 GitHub Releases 下载到仓库 `models/`；insightface 模型由库自动下载到 `~/.insightface/`。
 
 | 权重 | 引擎 | 用途 | 大小 | 必需 | 下载位置 |
 |---|---|---|---|---|---|
-| `yolov8s-worldv2.pt` | YOLO-World（开放词表检测） | **文本 → 目标框**：`set_classes([描述词])` 即可检测任意名词，本地 grounding 主力 | ~26 MB | ✅ | `weights/yolov8s-worldv2.pt` |
-| `osnet_x0_25_msmt17_*.pth` | OSNet（行人重识别） | **参考图 → 认人**：512 维特征余弦相似度，person_search 主引擎 | ~9 MB | ✅ | `weights/osnet/` |
-| `osnet_x1_0_msmt17_*.pth` | OSNet（行人重识别，高精度） | 同上的**高精度版**（x1.0），默认不用；设 `OSNET_WEIGHTS` 环境变量指向它即可启用 | ~17 MB | ➕ 可选 | `weights/osnet/` |
-| `ViT-B-32.pt` | CLIP（图文模型） | ① YOLO-World 的**文本编码器**（`set_classes` 依赖）② 兜底图文匹配 | ~350 MB | ✅ | `weights/clip/` |
+| `yolov8s-worldv2.pt` | YOLO-World（开放词表检测） | **文本 → 目标框**：`set_classes([描述词])` 即可检测任意名词，本地 grounding 主力 | ~26 MB | ✅ | `models/yolov8s-worldv2.pt` |
+| `osnet_x0_25_msmt17_*.pth` | OSNet（行人重识别） | **参考图 → 认人**：512 维特征余弦相似度，person_search 主引擎 | ~9 MB | ✅ | `models/osnet/` |
+| `osnet_x1_0_msmt17_*.pth` | OSNet（行人重识别，高精度） | 同上的**高精度版**（x1.0），默认不用；设 `OSNET_WEIGHTS` 环境变量指向它即可启用 | ~17 MB | ➕ 可选 | `models/osnet/` |
+| `ViT-B-32.pt` | CLIP（图文模型） | ① YOLO-World 的**文本编码器**（`set_classes` 依赖）② 兜底图文匹配 | ~350 MB | ✅ | `models/clip/` |
 | `buffalo_l`（SCRFD `det_10g.onnx` + ArcFace `w600k_r50.onnx`） | insightface | **人脸识别**：SCRFD 检人脸 + ArcFace 512 维嵌入 | ~300 MB | ⚠️ 人脸检索时 | `~/.insightface/models/buffalo_l/`（首次使用自动下载） |
 | `WeVisOne-VL-2B` | 腾讯 WeVisOne-VL（统一感知 VLM） | **本地语义第四票**：referring 定位 + 可靠拒绝（目标不存在返 None），替代/兜底云端 VLM 终审 | ~5.6 GB | ➕ 可选（`WEVISONE_DOWNLOAD=1 bash scripts/setup.sh`） | HuggingFace `tencent/WeVisOne-VL-2B`（自动尝试 hf-mirror） |
 
@@ -175,16 +175,16 @@ npx @deepseek-ai/dsh web
 
 ```
 DeepSeek Harness 进程
-├── 宿主半  src/index.js      → 16 个 vr_* 原生工具（defineTool，模式内可见）
-├── 客户端半 dist-client/     → 三列控制台（shell.overlay）+ 侧边栏按钮
-├── 预设     preset/          → 视频检索模式（standard + persona + 自带 skill + 工具）
-└── cordis.patch.yml          → 全局 vr-console 行（便携路径，dsh.bundle 自动合入）
+├── 宿主半  packages/vr-plugin/src/index.js → 16 个 vr_* 原生工具（defineTool，模式内可见）
+├── 客户端半 packages/vr-plugin/dist-client/ → 三列控制台（shell.overlay）+ 侧边栏按钮
+├── 预设     packages/vr-plugin/preset/     → 视频检索模式（standard + persona + 自带 skill + 工具）
+└── cordis.patch.yml（packages/vr-plugin/）  → 全局 vr-console 行（便携路径，dsh.bundle 自动合入）
           │ HTTP :8788（submit/poll/result; SSE）
           ▼
-   后端  server/server.py（FastAPI，vendor 自 fusion）—— 复用同一套检索逻辑
-          │ spawn (SKILL_SCRIPTS=engine/)
+   后端  packages/vr-backend/vr_backend/server.py（FastAPI，唯一源码）
+          │ spawn (SKILL_SCRIPTS=…/engines)
           ▼
-   引擎  engine/*.py（preflight / locate / verify_target / person_search / fast_plate_scan）
+   引擎  packages/vr-backend/vr_backend/engines/*.py（preflight / locate / verify_target / person_search / fast_plate_scan）
 ```
 
 DSH **本身就是 agent 循环**：会话智能体读 skill 手册 → 计划 → 调 vr_* 工具 → 后端跑确定性剧本 → 三信号投票出结果。插件的 `agent/loop.py`（原 fusion 自带的 ReAct）不重复实现。
@@ -255,29 +255,33 @@ DSH **本身就是 agent 循环**：会话智能体读 skill 手册 → 计划 �
 ## 目录结构
 
 ```
-dsh-video-retrieval/
-├── package.json              # dsh.bundle + dsh.client + prepare 构建脚本
-├── cordis.patch.yml          # bundle 补丁（全局客户端控制台行，便携路径）
-├── preset/video-retrieval/   # 模式组合 + 自带 skill
-│   ├── agent.cordis.yml      # 模板；install.sh 把 __...__ 占位符替换为绝对路径
-│   ├── preset.yml
-│   └── skills/video-retrieval/SKILL.md
-├── src/index.js              # 宿主半（16 个 vr_* 工具）
-├── dist-client/index.js      # 客户端 bundle（__ModuleLoader__ 格式）
-├── engine/                   # 引擎脚本（vendored）
-├── server/                   # fusion 镜像（vendored）+ web GUI
-├── scripts/
-│   ├── install.sh            # 部署预设 + 下载权重 + 冒烟
-│   ├── setup.sh              # 下载权重
-│   ├── sync.sh               # 【开发者专用】从私有 fusion/skill 源同步 engine/server
-│   ├── serve.sh              # 控制台标签页启动
-│   ├── smoke.mjs             # 纯 Node 冒烟（CI 用）
-│   └── cdp.mjs               # Chrome DevTools 调试辅助
-├── build.mjs                 # 宿主半构建（dist/index.js）
-├── .github/workflows/        # ci.yml + release.yml
-├── weights/                  # .gitignore；由 setup.sh 下载
-├── config/                   # 运行时演化配置
-└── data/                     # 运行时案例/任务/上传
+dsh-video-retrieval/            # npm 包根（安装入口不变）
+├── package.json              # main/exports/dsh 指向 packages/vr-plugin/
+├── packages/
+│   ├── vr-backend/           # Python 后端 —— 唯一源码
+│   │   ├── vr_backend/       #   server.py run.py toolbox.py paths.py config.py …
+│   │   │   ├── agent/        #     agent 循环 + 演化
+│   │   │   ├── bench/        #     评测脚本
+│   │   │   └── engines/      #     引擎脚本（子进程边界）
+│   │   ├── requirements.txt
+│   │   └── requirements-core.txt
+│   └── vr-plugin/            # DSH 插件 —— 唯一 JS 适配层
+│       ├── src/index.js      #   宿主半（16 个 vr_* 工具）
+│       ├── src/paths.js      #   路径解析（与 paths.py 逐条对齐）
+│       ├── client/index.html #   控制台前端（后端静态托管）
+│       ├── dist-client/      #   客户端 bundle（__ModuleLoader__ 格式）
+│       ├── preset/video-retrieval/   # 模式组合 + 自带 skill
+│       ├── cordis.patch.yml  #   bundle 补丁
+│       └── build.mjs         #   构建 dist/index.js + dist/paths.js
+├── tests/                    # 全部测试（一条命令：tests/run_all.py）
+├── scripts/                  # serve/install/setup/sync/check-consistency/smoke/cdp
+├── docs/                     # ENTRY-CONTRACT.md 等
+├── models/                   # .gitignore；权重（setup.sh 下载到这里）
+├── archive/                  # 旧树归档（fusion 代码 tar、旧案例库）
+└── .github/workflows/        # ci.yml + release.yml
+
+运行时状态**不在仓库里**：默认 `~/.dsh/video-retrieval/`（cases.jsonl / jobs / uploads / config /
+server.pid），`VTL_STATE_DIR` 可覆盖。包内没有任何可写目录。
 ```
 
 ---
@@ -293,7 +297,7 @@ bash scripts/install.sh        # 若预设/脚本有更新
 
 ## 开发者：同步 vendored 源码
 
-`engine/` 和 `server/` 是本插件 vendored 的引擎脚本与 fusion 后端镜像，**它们的权威源不在本仓库**（在开发者的私有 `fusion/` 检出和 skill 源里）。插件开发者用 `sync.sh` 单向同步：
+引擎脚本在 `packages/vr-backend/vr_backend/engines/`，后端在 `packages/vr-backend/vr_backend/` —— **两者都是本仓库的唯一源码**（`fusion/` 已于 2026-11-16 归档，见 `fusion/README-ARCHIVE.md`）。若引擎仍有外部 skill 源，用 `sync.sh` 从那里单向同步（不 `--delete`）：
 
 ```bash
 VTL_REPO_DIR=/path/to/your/video-retrieval        # 含 fusion/ 的私有仓库根

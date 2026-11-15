@@ -35,14 +35,7 @@ from collections import Counter
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
 _REPO = os.path.dirname(_FUSION)
-for p in (_HERE, _FUSION):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-_SKILL = os.environ.get(
-    "SKILL_SCRIPTS",
-    os.path.join(_FUSION, "..", "engine"))
-if _SKILL not in sys.path:
-    sys.path.insert(0, _SKILL)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import evaluator as E        # noqa: E402
 

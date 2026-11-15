@@ -1,0 +1,200 @@
+INFO:     127.0.0.1:55444 - "GET /health HTTP/1.1" 200 OK
+[warmup] engine preload done in 11s -> {'tool': 'verify_target', 'status': 'ok', 'summary': {'metrics.json': {'n_matches': 0, 'n_intervals': 0, 'intervals': [], 'degraded_to_ocr': True}, 'intervals.json': []}, 'outputs': {'dir': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt', 'metrics.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/metrics.json', 'verify.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/verify.json', 'intervals.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/intervals.json', 'ocr_weak_hits.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/ocr_weak_hits.json', 'manifest.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/manifest.json', 'matches.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/matches.json'}, 'error': None, 'cost': {'time': '分钟级', 'cloud': '每去重候选 1 次 VLM', 'requires': ['yolov8s-worldv2.pt', 'VLM key(否则降级 OCR)']}}
+INFO:     127.0.0.1:55460 - "POST /search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55461 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55475 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55488 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55501 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55515 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55536 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55544 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55559 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55568 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55580 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55590 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55601 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55626 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55639 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55650 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55662 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55669 - "GET /search/87d025fc710b HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27169]
+[watch] evolution cycle every 30.0 min
+[warmup] preloading engine models in background…
+[serve] http://127.0.0.1:8788  (GUI: /, health: /health)
+INFO:     Started server process [28217]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8788 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55779 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55789 - "GET /health HTTP/1.1" 200 OK
+[warmup] engine preload done in 13s -> {'tool': 'verify_target', 'status': 'ok', 'summary': {'metrics.json': {'n_matches': 0, 'n_intervals': 0, 'intervals': [], 'degraded_to_ocr': True}, 'intervals.json': []}, 'outputs': {'dir': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt', 'metrics.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/metrics.json', 'verify.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/verify.json', 'intervals.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/intervals.json', 'ocr_weak_hits.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/ocr_weak_hits.json', 'manifest.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/manifest.json', 'matches.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/matches.json'}, 'error': None, 'cost': {'time': '分钟级', 'cloud': '每去重候选 1 次 VLM', 'requires': ['yolov8s-worldv2.pt', 'VLM key(否则降级 OCR)']}}
+INFO:     127.0.0.1:55801 - "POST /search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55802 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55829 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55830 - "POST /cases/case_20261115_202417/confirm HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55835 - "POST /cases/case_20261115_202417/confirm HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55835 - "GET /?v=2 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55835 - "GET /search/bfbf326575aa HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55852 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55872 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55888 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55907 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55915 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55927 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55939 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55948 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55962 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55972 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55987 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55998 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56030 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56038 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56052 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56065 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56076 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56081 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56094 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56109 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56135 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56149 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56162 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56169 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56181 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56197 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56204 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56215 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56224 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56236 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56246 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56377 - "GET /search/555cb9929346 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56418 - "POST /search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56419 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56434 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56456 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56468 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56477 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56509 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56522 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56539 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56560 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56575 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56587 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56600 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56622 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56632 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56642 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56654 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56663 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56672 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56691 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56701 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56719 - "GET /search/f38168ceba00 HTTP/1.1" 200 OK
+[watch] evolve: {'ts': '2026-11-15T13:04:48+00:00', 'trigger': 'manual', 'dataset': {'cases': 0, 'case_rows': 0, 'candidates': 0, 'rows': 0}, 'status': 'no_data', 'reason': 'need >= 10 candidates or >= 10 confirmed OCR rows (got 0/0)'}
+INFO:     127.0.0.1:57324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57338 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28217]
+[watch] evolution cycle every 30.0 min
+[warmup] preloading engine models in background…
+[serve] http://127.0.0.1:8788  (GUI: /, health: /health)
+INFO:     Started server process [33557]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8788 (Press CTRL+C to quit)
+INFO:     127.0.0.1:57727 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57744 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57745 - "POST /search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57746 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+[warmup] engine preload done in 12s -> {'tool': 'verify_target', 'status': 'ok', 'summary': {'metrics.json': {'n_matches': 0, 'n_intervals': 0, 'intervals': [], 'degraded_to_ocr': True}, 'intervals.json': []}, 'outputs': {'dir': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt', 'metrics.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/metrics.json', 'verify.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/verify.json', 'intervals.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/intervals.json', 'ocr_weak_hits.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/ocr_weak_hits.json', 'manifest.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/manifest.json', 'matches.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/matches.json'}, 'error': None, 'cost': {'time': '分钟级', 'cloud': '每去重候选 1 次 VLM', 'requires': ['yolov8s-worldv2.pt', 'VLM key(否则降级 OCR)']}}
+INFO:     127.0.0.1:57793 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57801 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57811 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57822 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57830 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57838 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57860 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57868 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57880 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57894 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57908 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57916 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57947 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57954 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57962 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57989 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58000 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58006 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58032 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58047 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58060 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58085 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58098 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58130 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58144 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58170 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58178 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58190 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58199 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58213 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58234 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58251 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58257 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58276 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58284 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58296 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58317 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58324 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58335 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58341 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58353 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58368 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58383 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58404 - "GET /search/37fc9ead8c24 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [33557]
+[watch] evolution cycle every 30.0 min
+[warmup] preloading engine models in background…
+[serve] http://127.0.0.1:8788  (GUI: /, health: /health)
+INFO:     Started server process [34598]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8788 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58613 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:58626 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58627 - "POST /search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58628 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+[warmup] engine preload done in 11s -> {'tool': 'verify_target', 'status': 'ok', 'summary': {'metrics.json': {'n_matches': 0, 'n_intervals': 0, 'intervals': [], 'degraded_to_ocr': True}, 'intervals.json': []}, 'outputs': {'dir': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt', 'metrics.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/metrics.json', 'verify.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/verify.json', 'intervals.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/intervals.json', 'ocr_weak_hits.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/ocr_weak_hits.json', 'manifest.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/manifest.json', 'matches.json': '/Users/zhouql1978_1/dev/video-retrieval/dsh-video-retrieval/data/jobs/.warmup/vt/matches.json'}, 'error': None, 'cost': {'time': '分钟级', 'cloud': '每去重候选 1 次 VLM', 'requires': ['yolov8s-worldv2.pt', 'VLM key(否则降级 OCR)']}}
+INFO:     127.0.0.1:58660 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58669 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58683 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58700 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58711 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58722 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58737 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58744 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58760 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58787 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58791 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58800 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58811 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58825 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58849 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58868 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58877 - "GET /search/ddbc3b32aa39 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58885 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58982 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59728 - "GET /health HTTP/1.1" 200 OK
+[watch] evolve: {'ts': '2026-11-15T13:59:19+00:00', 'trigger': 'manual', 'dataset': {'cases': 0, 'case_rows': 0, 'candidates': 0, 'rows': 0}, 'status': 'no_data', 'reason': 'need >= 10 candidates or >= 10 confirmed OCR rows (got 0/0)'}
+INFO:     127.0.0.1:59835 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [34598]

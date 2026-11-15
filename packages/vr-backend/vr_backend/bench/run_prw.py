@@ -28,20 +28,7 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
-if _FUSION not in sys.path:
-    sys.path.insert(0, _FUSION)
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import metrics as M            # noqa: E402
-import datasets as D           # noqa: E402
-import signals as S            # noqa: E402
-
-SKILL_SCRIPTS = os.environ.get(
-    "SKILL_SCRIPTS",
-    os.path.join(_FUSION, "..", "engine"))
-if SKILL_SCRIPTS not in sys.path:
-    sys.path.insert(0, SKILL_SCRIPTS)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 
 def load_engine():

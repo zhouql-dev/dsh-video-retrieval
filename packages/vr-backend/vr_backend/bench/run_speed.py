@@ -18,17 +18,15 @@ import argparse
 import json
 import os
 import sys
+
+import paths as _paths  # noqa: E402  P1-16
 import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
-_SKILL = os.environ.get("SKILL_SCRIPTS",
-                        os.path.join(_FUSION, "..", "engine"))
-for p in (_HERE, _FUSION, _SKILL):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
-REPO = os.path.join(_FUSION, "..")
+REPO = _paths.repo_root()
 PRW_QUERY = os.path.join(REPO, "dataset", "PRW-v16.04.20", "query_box",
                          "479_c1s3_016471.jpg")
 CCPD_IMG = os.path.join(REPO, "dataset", "CCPD", "valn",
@@ -52,7 +50,7 @@ def bench_yolo():
     import common
     import cv2
     import numpy as np
-    model = common.load_yolo_person(None, os.path.join(REPO, "yolov8s-worldv2.pt"))
+    model = common.load_yolo_person(None, _paths.model_path("yolov8s-worldv2.pt"))
     frame = np.zeros((540, 960, 3), np.uint8)
     r = bench(lambda: model.predict(frame, conf=0.2, imgsz=640, verbose=False))
     r["fps"] = round(1000 / r["mean_ms"], 1)

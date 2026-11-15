@@ -28,10 +28,7 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
-for p in (_HERE, _FUSION, os.environ.get(
-        "SKILL_SCRIPTS", os.path.join(_FUSION, "..", "engine"))):
-    if p and p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import datasets as D   # noqa: E402
 import metrics as M    # noqa: E402

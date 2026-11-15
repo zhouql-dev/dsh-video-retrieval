@@ -1,39 +1,58 @@
 #!/usr/bin/env bash
-# 一致性门禁（P0-18）：仓库 ↔ profile、fusion ↔ server、engine ↔ server、工作区
+# check-consistency.sh — 一致性门禁（P0-18 起，P1-15…18 后按新结构改写）
+#
+# 四段：
+#   1/4 profile ↔ 仓库（桌面 profile 直接软链仓库；其它 profile 说明状态）
+#   2/4 一份代码（I1）：sync.sh --check
+#   3/4 路径单点（I3）：python 与 node 解析器输出一致
+#   4/4 工作区：干净
+#
 # 用法：bash scripts/check-consistency.sh [--quiet]
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
 QUIET=0; [ "${1:-}" = "--quiet" ] && QUIET=1
 FAIL=0
-h() { if command -v md5 >/dev/null 2>&1; then md5 -q "$1"; else md5sum "$1" | cut -d' ' -f1; fi; }
 ok() { [ "$QUIET" = 1 ] || echo "  OK   $*"; }
 bad() { echo "  FAIL $*"; FAIL=1; }
+PY="${VTL_PY:-python3}"
 
-echo "== 1/4 profile ↔ 仓库（JS 宿主与客户端）"
-for P in web desktop; do
+echo "== 1/4 profile ↔ 仓库（插件宿主）"
+PLUGIN="$HERE/packages/vr-plugin"
+for P in desktop web; do
   P_DIR="$HOME/.dsh/profiles/$P/node_modules/dsh-video-retrieval"
-  for f in src/index.js dist/index.js dist-client/index.js; do
-    if [ ! -f "$P_DIR/$f" ]; then bad "$P/$f 缺失"; continue; fi
-    a=$(h "$HERE/packages/vr-plugin/$f"); b=$(h "$P_DIR/$f")
-    [ "$a" = "$b" ] && ok "$P/$f" || bad "$P/$f（仓库 ${a:0:8} / profile ${b:0:8}）"
-  done
+  [ -e "$P_DIR" ] || { ok "$P: 未安装，跳过"; continue; }
+  # 桌面 profile 是软链到本仓库 —— 它跑的就是仓库代码；别的 profile 是独立快照。
+  TARGET="$(cd "$P_DIR" 2>/dev/null && pwd -P || echo "")"
+  REAL_HERE="$(cd "$HERE" && pwd -P)"
+  case "$TARGET" in
+    "$REAL_HERE"|"$REAL_HERE"/*)
+      for f in packages/vr-plugin/src/index.js packages/vr-plugin/src/paths.js; do
+        [ -f "$HERE/$f" ] || bad "仓库缺 $f"
+      done
+      ok "$P → 仓库（软链，运行即仓库代码）" ;;
+    *)
+      echo "  NOTE $P: 独立快照安装（$TARGET）"
+      echo "       └ 与仓库不同源；要同步请：dsh plugin --profile $P add file:$HERE" ;;
+  esac
 done
 
-echo "== 2/4 fusion ↔ server（Python 镜像）"
-miss=0
-while IFS= read -r rel; do
-  a="$REPO/fusion/$rel"; b="$HERE/packages/vr-backend/vr_backend/$rel"
-  [ -f "$b" ] || { bad "server/$rel 缺失（fusion 有）"; continue; }
-  [ "$(h "$a")" = "$(h "$b")" ] && ok "fusion=server $rel" || { bad "fusion≠server $rel"; miss=1; }
-done < <(cd "$REPO/fusion" 2>/dev/null && find . -name '*.py' -not -path './bench_out/*' -not -path './__pycache__/*' -not -name 'test_*.py' | sed 's|^\./||' | sort)
-[ "$miss" = 0 ] && ok "镜像一致" || true
+echo "== 2/4 一份代码（I1）"
+if bash "$HERE/scripts/sync.sh" --check >/tmp/vtl-i1.log 2>&1; then
+  ok "sync.sh --check 通过"
+else
+  bad "sync.sh --check 失败：$(tail -3 /tmp/vtl-i1.log | tr '\n' ' ')"
+fi
 
-echo "== 3/4 engine ↔ server（同名文件）"
-for f in provider.py wevisone_local.py; do
-  [ -f "$HERE/packages/vr-backend/vr_backend/engines/$f" ] && [ -f "$HERE/packages/vr-backend/vr_backend/$f" ] || continue
-  [ "$(h "$HERE/packages/vr-backend/vr_backend/engines/$f")" = "$(h "$HERE/packages/vr-backend/vr_backend/$f")" ] && ok "$f" || bad "engine/$f ≠ server/$f"
-done
+echo "== 3/4 路径单点（I3）"
+PY_PATH=$(cd "$HERE" && PYTHONPATH="$HERE/packages/vr-backend" "$PY" -m vr_backend.paths state_root 2>/dev/null)
+NODE_BIN="$(command -v node || true)"
+if [ -n "$NODE_BIN" ]; then
+  JS_PATH=$("$NODE_BIN" "$PLUGIN/src/paths.js" state_root 2>/dev/null)
+  [ "$PY_PATH" = "$JS_PATH" ] && ok "state_root 两端一致（$PY_PATH）" \
+                             || bad "state_root 漂移：py=$PY_PATH js=$JS_PATH"
+else
+  ok "node 不可用，跳过（tests/test_paths_contract.py 覆盖此判定）"
+fi
 
 echo "== 4/4 工作区"
 case "$(git -C "$HERE" status --porcelain 2>/dev/null | head -1)" in

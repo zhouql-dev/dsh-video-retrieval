@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # fetch_wevisone.sh — download the WeVisOne-VL-2B snapshot into
-#   $DEST/weights/hf-home/hub/models--tencent--WeVisOne-VL-2B/
+#   $DEST/models/hf-home/hub/models--tencent--WeVisOne-VL-2B/
 # (the exact layout wevisone_local._resolve_model_path() looks up, so the
 # runtime stays fully offline afterwards). Tries huggingface.co first, then
 # the hf-mirror.com fallback for restricted networks.
 set -euo pipefail
 DEST="${DEST:?set DEST to the package dir}"
 PY="${VTL_PYTHON:-python3}"
-SNAP="$DEST/weights/hf-home"
+SNAP="$DEST/models/hf-home"
 mkdir -p "$SNAP"
 
 download_from() {

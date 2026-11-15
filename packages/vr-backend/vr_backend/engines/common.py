@@ -30,7 +30,14 @@ def skill_root():
 
 
 def models_dir():
-    """Cross-platform user models dir (~/.video-analyst/models)."""
+    """权重目录：项目 models/（P1-16 单点）> ~/.video-analyst/models。"""
+    try:
+        import paths  # 包内单点；engines 由 _bootstrap 追加到 sys.path
+        root = Path(paths.weights_root())
+        if root.is_dir():
+            return root
+    except Exception:  # noqa: BLE001 —— 独立部署（skill）时没有 paths
+        pass
     return Path.home() / ".video-analyst" / "models"
 
 

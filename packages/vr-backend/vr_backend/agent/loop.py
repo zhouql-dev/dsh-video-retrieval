@@ -40,9 +40,7 @@ from datetime import datetime, timezone
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
-for p in (_PARENT, _HERE):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import toolbox as TB                    # noqa: E402
 import case_log as CL                   # noqa: E402

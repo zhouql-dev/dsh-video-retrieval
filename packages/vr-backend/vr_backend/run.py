@@ -39,10 +39,8 @@ import os
 import subprocess
 import sys
 
-# fusion package is one dir up from this file when run as a script.
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+# 包内平铺导入的顺序由 _bootstrap 决定（P1-8）
+import _bootstrap  # noqa: E402  P1-8：唯一的 sys.path 处理点
 import router        # noqa: E402
 import ground as ground_mod  # noqa: E402
 import provider       # noqa: E402
@@ -60,9 +58,7 @@ FAST_PLATE_SCAN = os.path.join(SKILL_SCRIPTS, "fast_plate_scan.py")
 
 
 def _skill_import(name: str):
-    """Import a module from SKILL_SCRIPTS (adding it to sys.path once)."""
-    if SKILL_SCRIPTS not in sys.path:
-        sys.path.insert(0, SKILL_SCRIPTS)
+    """Import a module from the engines dir (already on sys.path via _bootstrap)."""
     return __import__(name)
 
 

@@ -31,17 +31,15 @@ import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FUSION = os.path.dirname(_HERE)
-for p in (_HERE, _FUSION):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+import _bootstrap_shim  # noqa: E402,F401  P1-8：脚本模式垫片
 
 import metrics as M  # noqa: E402
+import paths as _paths  # noqa: E402  P1-16
 
 # P1-9：素材/权重由 env 提供，缺省时运行前会明确报错（不再写死家目录）
 VIDEO = os.environ.get("VTL_REPRO_VIDEO", "")
 REF = os.environ.get("VTL_REPRO_REF", "")
-YOLO_MODEL = os.environ.get("VTL_YOLO_MODEL",
-                            os.path.join(_FUSION, "..", "yolov8s-worldv2.pt"))
+YOLO_MODEL = os.environ.get("VTL_YOLO_MODEL") or _paths.model_path("yolov8s-worldv2.pt")
 PERSON_QUERY = "穿粉红色外套、白色长裤、白色运动鞋、黑发扎起的成年女性"
 PERSON_GT = [(580.0, 580.5), (758.0, 760.0)]       # report-1 GT moments
 PERSON_NAIVE_FP = 91                                # the baseline we must beat

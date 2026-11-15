@@ -7,20 +7,21 @@
 | | 独立启动（standalone） | DSH 插件 |
 |---|---|---|
 | 触发 | `bash scripts/serve.sh` | DSH 加载 `vr-console` 行（clientOnly）+ `vr-plugin` 行 |
-| 代码 | `server/` + `engine/`（本包） | 同一份 |
+| 代码 | `packages/vr-backend/vr_backend/`（Python）+ `packages/vr-plugin/`（JS） | 同一份 |
 | 状态根 | `~/.dsh/video-retrieval`（`VTL_STATE_DIR` 可覆盖） | 同一份 |
 | 端口 | 8788（`VTL_PORT` 可覆盖；`backendUrl` 单点） | 同一值 |
-| 界面 | 浏览器直接打开控制台 `http://127.0.0.1:8788/` | 侧边栏按钮 + iframe 打开**同一个**控制台 |
+| 界面 | 浏览器直接打开控制台 `http://127.0.0.1:8788/`（静态文件在 `packages/vr-plugin/client/`） | 侧边栏按钮 + iframe 打开**同一个**控制台 |
 | 工具 | 无 | 16 个 `vr_*` 工具（走同一后端 HTTP） |
 | 典型场景 | 无 DSH / 只想用控制台 / 调试 | 在 DSH 会话里用工具 + 面板 |
 
 ## 2. 共享的不变量
 
-1. **一份代码**：只有本包的 `server/`、`engine/`；`fusion/` 是上游源，通过 `scripts/sync.sh` 镜像进来，`scripts/sync.sh --check` 在 CI 里把关。
-2. **一份状态**：唯一可写根由 `VTL_STATE_DIR` 决定，默认 `~/.dsh/video-retrieval`；包内目录只读。
-3. **一个进程**：`server/main()` 启动时用 `flock` 锁 `<state>/server.pid`，第二个实例直接退出（exit 2），不会双写。
-4. **身份握手**：`GET /health` 返回 `{version, pid, nonce, state_root, cases_path}`；同时把同样内容写到 `<state>/server.identity.json`。插件只认 pid+nonce 一致的进程（不再用路径子串）。
-5. **URL 不硬编码**：客户端用 `window.__VR_BACKEND__`（host 注入）优先，默认 `127.0.0.1:8788` 仅作兜底。
+1. **一份代码**：只有 `packages/vr-backend/vr_backend/`（Python）与 `packages/vr-plugin/`（JS）。历史上的 `fusion/` 已归档到 `archive/fusion-legacy/`，`scripts/sync.sh --check` 现在校验"同名模块只出现一次"，`fusion/` 里不再有 `.py`。
+2. **一份状态**：唯一可写根由 `vr_backend/paths.py` 的 `state_root()` 决定（`VTL_STATE_DIR` > `$DSH_HOME/video-retrieval`），默认 `~/.dsh/video-retrieval`；包内没有任何可写目录（`jobs/`、`uploads/`、`cases.jsonl`、`config/` 全在状态根）。JS 侧 `src/paths.js` 逐条镜像，`tests/test_paths_contract.py` 在三种环境下比对两端的输出。
+3. **路径单点**：`python -m vr_backend.paths --print` 与 `node packages/vr-plugin/src/paths.js --print` 输出必须一致（repo/state/weights/bench/engines/client 六个键）。
+4. **一个进程**：`server/main()` 启动时用 `flock` 锁 `<state>/server.pid`，第二个实例直接退出（exit 2），不会双写。
+5. **身份握手**：`GET /health` 返回 `{version, pid, nonce, state_root, cases_path}`；同时把同样内容写到 `<state>/server.identity.json`。插件只认 pid+nonce 一致的进程（不再用路径子串）。
+6. **URL 不硬编码**：客户端用 `window.__VR_BACKEND__`（host 注入）优先，默认 `127.0.0.1:8788` 仅作兜底。
 
 ## 3. 先起谁都可以
 
@@ -33,6 +34,6 @@
 
 ## 4. 升级/卸载
 
-- 状态根在包外，`npm`/Release 升级不动数据。
+- 状态根在包外，`npm`/Release 升级不动数据。权重在仓库 `models/`（`VTL_WEIGHTS_DIR` 可覆盖，缺省回落 `~/.cache/vr/weights`）。
 - 重启后端：`POST /shutdown`（带 `X-Requested-With: vr-console`），或用 pid 文件里的 pid。
 - 客户端与控制台版本必须匹配后端 `/health` 的 `version`；不匹配时控制台顶部会提示刷新。

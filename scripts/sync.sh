@@ -1,62 +1,60 @@
 #!/usr/bin/env bash
-# 单向 vendoring 刷新（开发者工具）：canonical 源 → 本包。
-#   engine/  ：从 skill 源同步（不 --delete，保留本地自改）
-#   server/  ：fusion/ 的生成镜像（--delete 保证完全一致）
-#   weights/ ：拷贝（~0.5 GB）
+# sync.sh — 引擎源同步 + 『一份代码』校验（P1-8/P1-18 之后）。
+#
+# 历史上的行为：把 ../fusion/ rsync 到 server/（fusion 是上游源、server 是镜像）。
+# 2026-11-16 起 fusion/ 已归档（archive/fusion-legacy/ + fusion/README-ARCHIVE.md），
+# 代码只有一份：packages/vr-backend/vr_backend/。**本脚本不再写后端代码**，
+# 只做两件事：
+#
+#   1. 设置了 VTL_SKILL_DIR 时，把外部 skill 的 engines/ 同步进包（不 --delete，
+#      保留本地自改，这是唯一允许的反向同步）；
+#   2. 校验"一份代码"不变量：同名模块只允许出现一次、没有残留副本。
 #
 # 用法：
-#   bash scripts/sync.sh            实际同步
-#   bash scripts/sync.sh --check    只校验（内容比对），有差异 exit 1（CI 用）
+#   bash scripts/sync.sh            同步引擎（若 VTL_SKILL_DIR 存在）+ 校验
+#   bash scripts/sync.sh --check    只校验（CI 用，有违规 exit 1）
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="${VTL_REPO_DIR:-$(cd "$HERE/.." && pwd)}"
+REPO="$(cd "$HERE/.." && pwd)"
 SKILL="${VTL_SKILL_DIR:-}"
+BACKEND="$HERE/packages/vr-backend/vr_backend"
 CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
+FAIL=0
+bad() { echo "  FAIL $*"; FAIL=1; }
+ok()  { echo "  OK   $*"; }
 
-EXCLUDES=(--exclude '__pycache__' --exclude 'jobs' --exclude 'uploads' --exclude 'outputs'
-          --exclude 'output' --exclude 'bench_out' --exclude 'config' --exclude 'cases.jsonl'
-          --exclude 'tests/' --exclude 'test_*.py' --exclude 'work'
-          --exclude '*.pt' --exclude 'web' --exclude 'data')
-
-if [ "$CHECK" = 1 ]; then
-  if [ ! -d "$REPO/fusion" ]; then echo "SKIP check (no fusion at $REPO/fusion)"; exit 0; fi
-  out=$(diff -r -q \
-        -x '__pycache__' -x 'jobs' -x 'uploads' -x 'outputs' -x 'output' \
-        -x 'bench_out' -x 'config' -x 'cases.jsonl' -x 'tests' -x 'test_*.py' -x 'engines' \
-        -x 'work' -x '*.pt' -x 'web' -x 'data' \
-        "$REPO/fusion" "$HERE/packages/vr-backend/vr_backend" 2>&1 || true)
-  if [ -n "$out" ]; then
-    echo "$out" | head -20
-    echo "FAIL fusion 与 server 不一致（运行 bash scripts/sync.sh 修复）"
-    exit 1
-  fi
-  echo "PASS fusion 与 server 一致"
-  exit 0
-fi
-
-if [ -n "$SKILL" ]; then
+if [ "$CHECK" = 0 ] && [ -n "$SKILL" ]; then
   [ -d "$SKILL/scripts" ] || { echo "canonical skill missing: $SKILL/scripts" >&2; exit 1; }
-  mkdir -p "$HERE/packages/vr-backend/vr_backend/engines"
-  rsync -a --exclude '__pycache__' "$SKILL/scripts"/ "$HERE/engine"/
-  echo "engine synced"
-else
-  echo "SKIP engine/ (set VTL_SKILL_DIR)"
+  mkdir -p "$BACKEND/engines"
+  rsync -a --exclude '__pycache__' "$SKILL/scripts"/ "$BACKEND/engines"/
+  echo "  engines synced from $SKILL"
+elif [ "$CHECK" = 0 ]; then
+  echo "  SKIP engines sync (set VTL_SKILL_DIR)"
 fi
 
-if [ -d "$REPO/fusion" ]; then
-  mkdir -p "$HERE/packages/vr-backend/vr_backend"
-  rsync -a --delete "${EXCLUDES[@]}" "$REPO/fusion"/ "$HERE/packages/vr-backend/vr_backend"/
-  echo "server synced (fusion mirror)"
-else
-  echo "SKIP server/ (fusion not found at $REPO/fusion)"
-fi
+# ── 校验 ─────────────────────────────────────────────────────────────────────
+echo "== 一份代码（I1）"
+# 1a. 会被 import 的同名模块只允许一份
+for name in wevisone_local.py provider.py config.py paths.py; do
+  n=$(find "$HERE/packages" -name "$name" -not -path '*/__pycache__/*' | wc -l | tr -d ' ')
+  [ "$n" = 1 ] && ok "$name ×1" || bad "$name ×$n"
+done
+# 1b. 字节相同的重复 .py（排除 __pycache__ 与 archive）
+dupes=$(find "$HERE/packages" -name '*.py' -not -path '*/__pycache__/*' -exec md5 -q {} \; \
+        | sort | uniq -d | wc -l | tr -d ' ')
+[ "$dupes" = 0 ] && ok "无内容重复的 .py" || bad "$dupes 个 .py 内容重复"
 
-if [ -d "$REPO/weights" ]; then
-  mkdir -p "$HERE/weights/osnet" "$HERE/weights/clip"
-  rsync -a --exclude '__pycache__' "$REPO/weights/osnet"/ "$HERE/weights/osnet"/ 2>/dev/null || true
-  rsync -a --exclude '__pycache__' "$REPO/weights/clip"/ "$HERE/weights/clip"/ 2>/dev/null || true
-  cp -f "$REPO/yolov8s-worldv2.pt" "$HERE/yolov8s-worldv2.pt" 2>/dev/null || true
-  echo "weights synced"
-else
-  echo "SKIP weights/ (no weights dir)"
-fi
+echo "== 源码不再出现在归档目录"
+for d in fusion; do
+  n=$(find "$REPO/$d" -maxdepth 2 -name '*.py' -not -path '*/bench_out/*' 2>/dev/null | wc -l | tr -d ' ')
+  [ "$n" = 0 ] && ok "$d/ 无 .py（已归档）" || bad "$d/ 仍有 $n 个 .py"
+done
+
+echo "== 包内没有可写运行态"
+for d in data jobs uploads work outputs config; do
+  [ -e "$BACKEND/$d" ] && bad "packages/vr-backend/vr_backend/$d 存在（运行态必须在状态根）" \
+                       || ok "无 $d/"
+done
+
+echo
+[ "$FAIL" = 0 ] && { echo "PASS 一份代码（I1）"; exit 0; } || { echo "FAIL 见上"; exit 1; }

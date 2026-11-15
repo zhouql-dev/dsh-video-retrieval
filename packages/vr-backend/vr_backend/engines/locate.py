@@ -9,7 +9,6 @@ Self-contained; depends on the project venv (torch, ultralytics, opencv). See SK
 """
 from __future__ import annotations
 import argparse, json, os, sys, time
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # siblings: common/glmv
 import cv2
 import numpy as np
 from ultralytics import YOLOWorld

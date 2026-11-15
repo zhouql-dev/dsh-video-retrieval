@@ -1,27 +1,28 @@
+# ── 通用 ────────────────────────────────────────────────────────────────────
 __pycache__/
+*.pyc
 .DS_Store
 *.log
-*.pyc
-config/*.json
-config/rollback/
-config/.veto
-data/
+*.bak*
+
+# ── 构建产物（由 build.mjs / release.yml 生成，不入库）────────────────────────
 dist/
 node_modules/
-server.log
-server/bench_out/
-server/jobs/
-server/outputs/
-server/uploads/
-server/work/
-weights/
+packages/vr-plugin/dist/
+
+# ── 权重与大素材（setup.sh 下载到 models/；VTL_WEIGHTS_DIR 可覆盖）─────────────
+models/
 yolov8s-worldv2.pt
 
-# 2026-11-15 P0-17 固化基线时补
+# ── 运行态：唯一可写根在 ~/.dsh/video-retrieval（VTL_STATE_DIR 可覆盖），
+#    包内不允许出现这些目录（scripts/sync.sh --check 会拦）──────────────────
+packages/vr-backend/vr_backend/jobs/
+packages/vr-backend/vr_backend/uploads/
+packages/vr-backend/vr_backend/work/
+packages/vr-backend/vr_backend/outputs/
+packages/vr-backend/vr_backend/config/
+
+# ── 密钥 ────────────────────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
-*.bak*
-config/*.jsonl
-server/loop.py
-server/config/

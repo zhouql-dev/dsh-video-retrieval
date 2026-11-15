@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh — download model weights into the INSTALLED package's weights/ dir.
+# setup.sh — download model weights into the INSTALLED package's models/ dir.
 # Skips files that already exist (idempotent).
 #
 # Weights are ~0.5 GB and not shipped in git/npm; this script pulls them from
@@ -12,7 +12,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${VTL_INSTALL_DIR:-$HERE}"
 PREFIX="${WEIGHTS_URL_PREFIX:-https://github.com/zhouql-dev/dsh-video-retrieval/releases/latest/download}"
-mkdir -p "$DEST/weights/osnet" "$DEST/weights/clip"
+mkdir -p "$DEST/models/osnet" "$DEST/models/clip"
 
 download() {
   local name="$1" url="$2" dest="$3"
@@ -26,19 +26,19 @@ OSNET_X0_25="osnet_x0_25_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_
 OSNET_X1_0="osnet_x1_0_msmt17_combineall_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip_jitter.pth"
 
 download yolov8s-worldv2.pt "$PREFIX/yolov8s-worldv2.pt" "$DEST/yolov8s-worldv2.pt"
-download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$DEST/weights/osnet/$OSNET_X0_25"
-download osnet_x1_0.pth         "$PREFIX/$OSNET_X1_0"       "$DEST/weights/osnet/$OSNET_X1_0"
-download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$DEST/weights/clip/ViT-B-32.pt"
+download osnet_x0_25.pth        "$PREFIX/$OSNET_X0_25"      "$DEST/models/osnet/$OSNET_X0_25"
+download osnet_x1_0.pth         "$PREFIX/$OSNET_X1_0"       "$DEST/models/osnet/$OSNET_X1_0"
+download ViT-B-32.pt            "$PREFIX/ViT-B-32.pt"        "$DEST/models/clip/ViT-B-32.pt"
 
 # Optional: WeVisOne-VL-2B (local semantic verifier / fourth voting signal).
 # ~5.6 GB via HuggingFace (hf-mirror fallback); pipeline degrades to abstain
 # (identical to today's behavior) when absent. Enable explicitly:
 #   WEVISONE_DOWNLOAD=1 bash scripts/setup.sh
 if [ "${WEVISONE_DOWNLOAD:-0}" = "1" ]; then
-  echo "downloading WeVisOne-VL-2B (~5.6 GB) into $DEST/weights/hf-home ..."
+  echo "downloading WeVisOne-VL-2B (~5.6 GB) into $DEST/models/hf-home ..."
   DEST="$DEST" "$HERE/scripts/fetch_wevisone.sh"
 else
   echo "skip wevisone weights (set WEVISONE_DOWNLOAD=1 to fetch ~5.6 GB)"
 fi
 
-echo "weights ready in $DEST/weights/"
+echo "weights ready in $DEST/models/"

@@ -36,10 +36,7 @@ import threading
 import time
 import uuid
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.join(_HERE, "agent"))
+import _bootstrap  # noqa: E402  P1-8：唯一的 sys.path 处理点
 
 import case_log as CL          # noqa: E402
 import config as CFG           # noqa: E402
@@ -1033,8 +1030,7 @@ def chat(req: ChatRequest):
 
 def _env_file() -> str:
     """The .env path settings persist to (test seam may swap FUSION_ENV)."""
-    return os.environ.get("FUSION_ENV") or os.path.join(
-        os.path.dirname(_HERE), ".env")
+    return os.environ.get("FUSION_ENV") or os.path.join(paths.repo_root(), ".env")
 
 _SETTING_KEYS = ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL",
                  "ZHIPUAI_API_KEY", "DASHSCOPE_API_KEY", "OXALPHA_API_KEY")

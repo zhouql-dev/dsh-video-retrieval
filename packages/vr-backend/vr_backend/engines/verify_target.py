@@ -34,7 +34,6 @@ import cv2
 from ultralytics import YOLOWorld
 
 here = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, here)
 from glmv import refine_query, verify_target  # noqa: E402
 from common import (build_intervals, detect_and_crop, dedup_largest_per_window,  # noqa: E402
                     annotate_best_frame, pick_device, resolve_model_path)

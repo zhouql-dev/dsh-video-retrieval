@@ -33,7 +33,6 @@ import cv2
 import numpy as np
 
 here = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, here)
 import matcher  # noqa: E402
 import common  # noqa: E402
 from glmv import match_image as _glmv_match  # noqa: E402
