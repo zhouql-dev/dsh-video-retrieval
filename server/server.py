@@ -128,6 +128,7 @@ class SearchRequest(BaseModel):
     query: str = ""             # 可空:仅参考图时走以图搜人
     ref: str | None = None
     mode: str = "auto"          # auto | deterministic
+    profile: str | None = None  # W4: fast | standard | deep (预算档位)
     max_steps: int = 12
 
 
@@ -155,13 +156,27 @@ def _list_artifacts(job_id: str, workdir: str) -> list[str]:
     return sorted(arts, key=_key)[:200]
 
 
+# W4: 设备感知串行化——M4 单 GPU, 双任务并发实测双双减速 2-3 倍。
+# 排队而非并行; VTL_MAX_WORKERS 可放宽(多 GPU 机器)。
+_JOB_SEM = threading.Semaphore(max(1, int(os.environ.get("VTL_MAX_WORKERS", "1"))))
+
+
 def _run_job(job_id: str, req: SearchRequest):
     job = JOBS[job_id]
     workdir = os.path.join(JOBS_DIR, job_id)
+    _JOB_SEM.acquire()
     try:
+        if job.get("cancelled"):
+            job["status"] = "cancelled"
+            job["events"].put(None)
+            _persist_job(job_id, status="cancelled", query=job["query"],
+                         video=job["video"])
+            return
+        job["status"] = "running"          # acquired the device
         agent = AGENT_FACTORY(workdir=workdir, max_steps=req.max_steps,
                               on_event=job["events"].put, cases_path=CASES_PATH)
-        res = agent.run(req.query, req.video, ref=req.ref, mode=req.mode)
+        res = agent.run(req.query, req.video, ref=req.ref, mode=req.mode,
+                        profile=getattr(req, "profile", None))
         res.setdefault("artifacts", _list_artifacts(job_id, workdir))
         job["result"] = res
         job["status"] = "done"
@@ -171,6 +186,7 @@ def _run_job(job_id: str, req: SearchRequest):
                          "error": f"{type(e).__name__}: {e}", "artifacts": []}
         job["status"] = "failed"
     finally:
+        _JOB_SEM.release()
         if job.get("cancelled"):
             job["status"] = "cancelled"
         job["events"].put(None)                 # SSE sentinel
@@ -188,6 +204,12 @@ def cancel_job(job_id: str):
     if job["status"] in ("done", "failed", "cancelled"):
         return {"job_id": job_id, "status": job["status"], "cancelled": False}
     job["cancelled"] = True
+    if job["status"] == "queued":
+        # W-fix: 排队任务取消需立即落盘 cancelled, 否则重启后回放成 queued
+        job["status"] = "cancelled"
+        job["events"].put(None)
+        _persist_job(job_id, status="cancelled", query=job["query"],
+                     video=job["video"])
     try:
         subprocess.run(["pkill", "-f", f"jobs/{job_id}"], capture_output=True,
                        timeout=15)
@@ -199,14 +221,14 @@ def cancel_job(job_id: str):
 @app.post("/search")
 def search(req: SearchRequest):
     job_id = uuid.uuid4().hex[:12]
-    JOBS[job_id] = {"status": "running", "events": queue.Queue(), "result": None,
+    JOBS[job_id] = {"status": "queued", "events": queue.Queue(), "result": None,
                     "thread": None, "query": req.query, "video": req.video,
                     "created": time.time()}
     JOBS[job_id]["thread"] = threading.Thread(
         target=_run_job, args=(job_id, req), daemon=True)
     JOBS[job_id]["thread"].start()
-    _persist_job(job_id, status="running", query=req.query, video=req.video)
-    return {"job_id": job_id, "status": "running"}
+    _persist_job(job_id, status=JOBS[job_id]["status"], query=req.query, video=req.video)
+    return {"job_id": job_id, "status": JOBS[job_id]["status"]}
 
 
 @app.get("/search/{job_id}")
@@ -216,6 +238,37 @@ def job_status(job_id: str):
         raise HTTPException(404, f"unknown job {job_id}")
     return {"job_id": job_id, "status": job["status"], "query": job["query"],
             "video": job["video"], "result": job["result"]}
+
+
+@app.get("/pipeline/spec")
+def pipeline_spec():
+    """Model badges for the GUI pipeline panel (read-only, never loads models).
+    Cheap introspection of what the pipeline WOULD use right now — the panel
+    combines this with live SSE events to show data flow."""
+    import provider as _prov
+    try:
+        ps = _prov.provider_status()
+    except Exception:
+        ps = {}
+    import wevisone_local as _wv
+    st = _wv.status()
+    snap_ok = False
+    try:
+        snap_ok = os.path.isdir(_wv._resolve_model_path(st["model"]))
+    except Exception:
+        pass
+    return {
+        "vlm": {"active": ps.get("active"), "glm": ps.get("glm"),
+                "qwen": ps.get("qwen"), "oxalpha": ps.get("oxalpha")},
+        "llm_model": os.environ.get("LLM_MODEL", "deepseek-v4-pro"),
+        "wevisone": {"enabled": st.get("enabled"), "loaded": st.get("loaded"),
+                     "weights_present": snap_ok, "model": st.get("model"),
+                     "reason": st.get("reason")},
+        "detect_model": "yolov8s-worldv2.pt",
+        "tracker": "BoT-SORT",
+        "reid": "OSNet x0.25 + ArcFace(buffalo_l)",
+        "ocr": "PP-OCRv4 + tesseract + 混淆表",
+    }
 
 
 @app.get("/search/{job_id}/events")
@@ -736,7 +789,7 @@ def _env_file() -> str:
         os.path.dirname(_HERE), ".env")
 
 _SETTING_KEYS = ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL",
-                 "ZHIPUAI_API_KEY", "DASHSCOPE_API_KEY")
+                 "ZHIPUAI_API_KEY", "DASHSCOPE_API_KEY", "OXALPHA_API_KEY")
 
 
 def _mask(v: str) -> str:
@@ -750,6 +803,7 @@ def get_settings():
             "llm_api_key_masked": _mask(cur["LLM_API_KEY"]),
             "zhipuai_api_key_masked": _mask(cur["ZHIPUAI_API_KEY"]),
             "dashscope_api_key_masked": _mask(cur["DASHSCOPE_API_KEY"]),
+            "oxalpha_api_key_masked": _mask(cur["OXALPHA_API_KEY"]),
             "env_file": _env_file()}
 
 
@@ -759,12 +813,14 @@ class SettingsRequest(BaseModel):
     llm_model: str | None = None
     zhipuai_api_key: str | None = None
     dashscope_api_key: str | None = None
+    oxalpha_api_key: str | None = None
 
 
 _FIELD_MAP = {"llm_base_url": "LLM_BASE_URL", "llm_api_key": "LLM_API_KEY",
               "llm_model": "LLM_MODEL",
               "zhipuai_api_key": "ZHIPUAI_API_KEY",
-              "dashscope_api_key": "DASHSCOPE_API_KEY"}
+              "dashscope_api_key": "DASHSCOPE_API_KEY",
+              "oxalpha_api_key": "OXALPHA_API_KEY"}
 
 
 def apply_settings(updates: dict) -> dict:
@@ -805,6 +861,18 @@ def set_settings(req: SettingsRequest):
 WEB_DIR = os.environ.get("FUSION_WEB") or os.path.join(_HERE, "web")
 os.makedirs(WEB_DIR, exist_ok=True)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+@app.middleware("http")
+async def _no_cache_html(request, call_next):
+    """GUI pages must always revalidate: Chromium's heuristic caching (10% of
+    Last-Modified age) kept stale consoles alive for hours inside the long-
+    lived DSH iframe, so frontend updates never appeared without a hard
+    reload. HTML gets no-cache; media/static bytes keep default behaviour."""
+    resp = await call_next(request)
+    if str(resp.headers.get("content-type", "")).startswith("text/html"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
 app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
 

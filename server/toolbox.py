@@ -87,19 +87,11 @@ TOOL_MANIFEST = [
         "fallback": "fusion_run",
     },
     {
-        "name": "fast_plate_scan", "kind": "engine", "impl": "subprocess",
-        "desc": "车牌全片重扫: 复用 car boxes 或全帧, 找车牌色块(蓝/黄/绿)放大均衡后 tesseract OCR,"
-                "按字符混淆表(Q↔9/1, G↔6, B↔8…)变体匹配, 可疑时段 step=2 细扫。"
-                "精确文本检索的主力与 VLM 降级路径; 15 分钟 1080p 约 9 分钟。",
-        "inputs": {"video": "视频路径", "target": "车牌字母数字(无省份字)", "out": "输出目录",
-                   "manifest": "car boxes 清单(可选, 缺省 --everywhere 全帧)", "step": "帧间隔(默认10)"},
-        "outputs": ["hits.json", "weak_hits.json", "all_ocr.json", "suspicious.json", "metrics.json", "hit_f*.jpg"],
-        "cost": {"time": "~9 分钟(15min 1080p)", "cloud": 0, "requires": ["tesseract"]},
-        "fallback": None,
-    },
-    {
+        # W1 预算红线: fast_plate_scan 已从智能体工具清单移除(实测 15min 视频
+        # 双遍 >130min, 超预算 8 倍)。脚本保留(_script_for 不变)以防旧案例
+        # 回放, 但 LLM 无法再调度它; 车牌查询由 router 引导为语义描述。
         "name": "fusion_run", "kind": "engine", "impl": "subprocess",
-        "desc": "云边融合端到端(本包 Phase 1): router → 云粗筛窗口(qwen-vl-max, 失败返空回落全片)"
+            "desc": "云边融合端到端(本包 Phase 1): router → 云粗筛窗口(qwen-vl-max, 失败返空回落全片)"
                 "→ 本地检测/裁剪 → 三信号投票(色相/时间曲线/VLM 图对图, agree≥2)。"
                 "疑难首选入口: 图像输入用 --ref 走完整三信号; 车牌查询自动走 OCR 分支。",
         "inputs": {"video": "视频路径", "query": "描述(车牌/人物/物体)", "out": "输出目录",
@@ -161,7 +153,8 @@ def check_requirements(tool: str) -> dict:
             env = env.split(" ")[0].split("/")[0]
             if not (os.environ.get(env) or (env == "VLM key" and (
                     os.environ.get("ZHIPUAI_API_KEY") or os.environ.get("GLM_API_KEY")
-                    or os.environ.get("DASHSCOPE_API_KEY")))):
+                    or os.environ.get("DASHSCOPE_API_KEY")
+                    or os.environ.get("OXALPHA_API_KEY")))):
                 missing.append(r)
         elif r == "tesseract" and not shutil.which("tesseract"):
             missing.append(r)
@@ -218,6 +211,7 @@ def _build_argv(tool: str, params: dict) -> list[str]:
             argv.append("--recover"); argv.append(str(p["recover"]))
     elif tool == "locate":
         add("--video", "video"); add("--query", "query"); add("--out", "out")
+        add("--frame-step", "step"); add("--imgsz", "imgsz")
         add_flag("--use-vlm", "use_vlm"); add("--device", "device")
         argv += ["--world-model",
                  p.get("world_model") or _resolve_model("yolov8s-worldv2.pt")]
@@ -240,6 +234,8 @@ def _build_argv(tool: str, params: dict) -> list[str]:
     elif tool == "fusion_run":
         add("--video", "video"); add("--query", "query"); add("--out", "out")
         add("--ref", "ref"); add("--agree", "agree"); add("--step", "step")
+        add("--imgsz", "imgsz"); add("--embed-cap", "embed_cap")
+        add("--verify-topk", "verify_topk")
         add_flag("--no-ground", "no_ground"); add("--device", "device")
         argv += ["--model", p.get("model") or _resolve_model("yolov8s-worldv2.pt")]
     return argv

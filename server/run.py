@@ -174,14 +174,33 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
         return manifest, trajectory, idx
 
     def moments_from(manifest):
-        """Embed-match each deduped moment vs the reference."""
+        """Embed-match each deduped moment vs the reference.
+        W3: candidates are capped to --embed-cap (ranked by box area) and
+        embedded in MPS batches — the field test showed 40 min of serial
+        single-crop embedding on a 15 min video."""
         dedup = common.dedup_largest_per_window(manifest, args.window, fps)
-        moments = []
+        items = []
         for m in dedup:
             crop = cv2.imread(os.path.join(crops_dir, m["crop"]))
             if crop is None:
                 continue
-            v = matcher.embed_person(crop) if kind == "person" else matcher.embed_face(crop)
+            box = m.get("box") or [0, 0, 0, 0]
+            area = max(1, (box[2] - box[0]) * (box[3] - box[1]))
+            items.append((m, crop, area))
+        cap = getattr(args, "embed_cap", None)
+        if cap and len(items) > cap:
+            kept = sorted(items, key=lambda t: -t[2])[:cap]
+            items = sorted(kept, key=lambda t: t[0]["frame"])
+            print(f"[W3] embed-cap={cap}: {len(kept)} kept, "
+                  f"{len(dedup) - len(kept)} low-area candidates skipped", flush=True)
+        crops = [c for _, c, _ in items]
+        if kind == "person" and hasattr(matcher, "embed_person_batch"):
+            vecs = matcher.embed_person_batch(crops)
+        else:
+            vecs = [matcher.embed_face(c) if kind == "person" else None
+                    for c in crops]
+        moments = []
+        for (m, crop, _area), v in zip(items, vecs):
             sim = common.cosine(qv, v) if (qv is not None and v is not None) else 0.0
             moments.append({"id": f"f{m['frame']}", "frame": m["frame"], "t_s": m["t_s"],
                             "box": m["box"], "crop": m["crop"], "sim": round(float(sim), 4),
@@ -191,11 +210,23 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
     def score_moments(moments, with_vlm):
         """§11.2 signals + vote. VLM arbiter is the expensive cloud signal; it
         only runs when with_vlm is set (final pass) and only arbitrates the
-        top-K by sim; the rest abstain so agree=2 works on hue+temporal."""
+        top-K by sim; the rest abstain so agree=2 works on hue+temporal.
+        WeVisOne (local referring, fourth witness) follows the same gating —
+        it is cheap but not free (~0.5s/crop on MPS), so it also runs only in
+        the final pass on the top-K set."""
+        import wevisone_local
         curve_s = args.curve_s
         topk = args.vlm_topk or len(moments)
+        # W3: hard cap on the final-pass arbiter set (verify_topk from the
+        # scheduler) — per-crop local+cloud verification is the expensive tail.
+        if getattr(args, "verify_topk", None):
+            topk = min(topk, int(args.verify_topk))
         arbiter_idx = ({m["id"] for m in sorted(moments, key=lambda m: -m["sim"])[:topk]}
                        if with_vlm else set())
+        wv_on = (with_vlm and wevisone_local.enabled()
+                 and wevisone_local.available())
+        if with_vlm and not wevisone_local.available():
+            print(f"[wevisone] off: {wevisone_local.status().get('reason', 'disabled')}")
         candidates = []
         for m in moments:
             nearby = [(x["t_s"], x["sim"]) for x in moments
@@ -205,12 +236,18 @@ def run_semantic_image(video: str, ref: str, query: str, windows: list[dict],
             else:
                 vlm = {"score": 0.0, "raw": {"match": "skipped", "conf": 0.0},
                        "evidence": ("below vlm_topk" if with_vlm else "pass-1 (pre-escalation)") + "; abstains"}
+            if wv_on and m["id"] in arbiter_idx:
+                wv = sig.wevisone_ground(query, m["crop_bgr"])
+            else:
+                wv = {"score": 0.0, "raw": {"match": "skipped"},
+                      "evidence": ("below vlm_topk" if with_vlm else "pass-1 (pre-escalation)") + "; abstains"}
             candidates.append({"id": m["id"], "frame": m["frame"], "t_s": m["t_s"],
                                "box": m["box"], "crop": m["crop"], "sim": m["sim"],
                                "track_id": m.get("track_id"),
                                "results": {"hue": sig.hue_consistency(ref_crop, m["crop_bgr"]),
                                            "temporal": sig.temporal_curve(nearby),
-                                           "vlm": vlm}})
+                                           "vlm": vlm,
+                                           "wevisone": wv}})
         scored = scorer.score_all(candidates, _threshold_args(args), agree=args.agree)
         for c in scored:
             c.pop("results", None)      # keep the JSON dump compact (signals kept)
@@ -319,9 +356,20 @@ def run_semantic_text(video: str, query: str, windows: list[dict],
     print(f"[stage1] {len(manifest)} crops -> {len(dedup)} moments")
 
     results = []
+    import wevisone_local
+    wv_ok = wevisone_local.available()
+    if wv_ok:
+        print("[wevisone] local referring active for per-crop verify "
+              "(cloud verify_target only as fallback)")
     for m in dedup:
         crop = cv2.imread(os.path.join(crops_dir, m["crop"]))
-        v = provider.verify_target(query, crop) or {"match": "unclear"}
+        v = None
+        if wv_ok:
+            r = wevisone_local.refer(query, crop)
+            if r and r["match"] in ("exact", "no"):
+                v = {"match": r["match"], "read": "", "note": f"wevisone local {r['match']}"}
+        if v is None:
+            v = provider.verify_target(query, crop) or {"match": "unclear"}
         v.update({"frame": m["frame"], "t_s": m["t_s"], "box": m["box"], "crop": m["crop"],
                   "track_id": m.get("track_id")})
         results.append(v)
@@ -406,7 +454,8 @@ def build_argparser():
     ap.add_argument("--query", required=True)
     ap.add_argument("--ref", default=None, help="reference image (enables §11.2 multi-signal)")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--provider", default=None, help="glm|qwen (overrides VLM_PROVIDER env)")
+    ap.add_argument("--provider", default=None,
+                    help="glm|qwen|oxalpha (overrides VLM_PROVIDER env)")
     # detection
     ap.add_argument("--step", type=int, default=3)
     ap.add_argument("--window", type=float, default=1.0)
@@ -428,6 +477,15 @@ def build_argparser():
     ap.add_argument("--vlm-topk", type=int, default=0,
                     help="VLM-arbiter only the top-K candidates by sim (0=all); "
                          "the rest abstain on that signal (cost control)")
+    ap.add_argument("--wevisone", default=None,
+                    help="auto|on|off — local WeVisOne-VL referring as a fourth "
+                         "signal (default WEVISONE_ENABLED env, else auto: on "
+                         "iff the model loads; failure degrades to abstain)")
+    # W3 scheduler knobs (set by the budget scheduler via toolbox argv)
+    ap.add_argument("--embed-cap", type=int, default=None,
+                    help="cap candidates before embedding (rank by box area)")
+    ap.add_argument("--verify-topk", type=int, default=None,
+                    help="hard cap on final-pass arbiter set")
     ap.add_argument("--min-track-frames", type=int, default=1,
                     help="track clustering: keep hit tracks with >=N agreeing "
                          "frames (>=3 cuts isolated single-frame false positives)")
@@ -448,6 +506,8 @@ def main(argv=None):
     if args.provider:
         os.environ["VLM_PROVIDER"] = args.provider
         provider.VLM_PROVIDER = args.provider.lower()
+    if args.wevisone:
+        os.environ["WEVISONE_ENABLED"] = args.wevisone
     os.makedirs(args.out, exist_ok=True)
 
     # E0 runtime config: values are already layered into scorer.DEFAULT_THRESHOLDS
